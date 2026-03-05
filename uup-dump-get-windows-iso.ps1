@@ -436,6 +436,9 @@ function Get-WindowsIso($name, $destinationDirectory) {
   Write-CleanLine "Moving the created $sourceIsoPath to $destinationDirectory/$IsoName"
   Move-Item -Force $sourceIsoPath "$destinationDirectory/$IsoName"
 
+  Write-CleanLine "Cleaning up build directory to save space..."
+  Remove-Item -Force -Recurse $buildDirectory -ErrorAction SilentlyContinue
+
   Write-Output "ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
   $fullIsoPath = (Resolve-Path "$destinationDirectory/$IsoName").Path
   Write-Output "ISO_PATH=$fullIsoPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append

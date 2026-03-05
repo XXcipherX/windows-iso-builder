@@ -182,7 +182,8 @@ jobs:
           $verCode  = $verMap['${{ inputs.versions }}']
 
           $opts = ''
-          if ('${{ inputs.esd }}' -eq 'true')     { $opts += ' -esd' }
+          # If Tiny11 is enabled, skip UUP dump ESD compression (waste of time, Tiny11 will re-compress it anyway)
+          if ('${{ inputs.esd }}' -eq 'true' -and '${{ inputs.tiny11 }}' -ne 'true') { $opts += ' -esd' }
           if ('${{ inputs.netfx3 }}' -eq 'true')  { $opts += ' -netfx3' }
           if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
             $opts += ' -revision "${{ inputs.revision }}"'
@@ -255,8 +256,11 @@ jobs:
 
           $startTime = Get-Date
 
+          $args = @("-ISOPath", "`"$isoPath`"", "-INDEX", 1)
+          if ('${{ inputs.esd }}' -eq 'true') { $args += "-ESD" }
+          
           # INDEX=1: UUP dump builds a single-edition ISO, so the WIM always has index 1
-          .\scripts\tiny11maker-headless.ps1 -ISOPath $isoPath -INDEX 1
+          Invoke-Expression ".\scripts\tiny11maker-headless.ps1 $($args -join ' ')"
 
           $buildTime = (Get-Date) - $startTime
           Write-Output "Tiny11 optimization completed in $($buildTime.TotalMinutes.ToString('F2')) minutes"
@@ -281,7 +285,12 @@ jobs:
           }
 
           $destinationDir = Split-Path $originalIso -Parent
-          $isoName = $env:ISO_NAME
+          $baseName = $env:ISO_NAME
+          if ($baseName -match '(?i)(.*)(\.iso)$') {
+            $isoName = $matches[1] + "_Tiny11" + $matches[2]
+          } else {
+            $isoName = $baseName + "_Tiny11.iso"
+          }
           Move-Item -Path $tiny11Iso -Destination "$destinationDir\$isoName" -Force
 
           # Recalculate checksum for the optimized ISO
@@ -294,7 +303,8 @@ jobs:
           Write-Output "Tiny11 ISO finalized: $isoName (${sizeGB}GB)"
           Write-Output "SHA256: $newChecksum"
 
-          # Update env for summary
+          # Update env for summary and artifact upload
+          echo "ISO_NAME=$isoName" >> $env:GITHUB_ENV
           echo "ISO_PATH=$newIsoPath" >> $env:GITHUB_ENV
           echo "ISO_CHECKSUM=$newChecksum" >> $env:GITHUB_ENV
           echo "ISO_SIZE_GB=$sizeGB" >> $env:GITHUB_ENV

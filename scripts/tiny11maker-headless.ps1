@@ -55,7 +55,10 @@ param (
     [string]$OutputPath,
     
     [Parameter(Mandatory = $false, HelpMessage = "Skip cleanup of temporary files")]
-    [switch]$SkipCleanup
+    [switch]$SkipCleanup,
+    
+    [Parameter(Mandatory = $false, HelpMessage = "Export as install.esd (maximum compression)")]
+    [switch]$ESD
 )
 
 #---------[ Error Handling ]---------#
@@ -565,15 +568,24 @@ function Dismount-AndExport {
     Write-Log "Dismounting install.wim..."
     Dismount-WindowsImage -Path $scratchDir -Save
     
-    Write-Log "Exporting image with maximum compression (this may take 15-20 minutes)..."
-    $tempWim = "$tiny11Dir\sources\install2.wim"
-    & Dism.exe /Export-Image /SourceImageFile:$wimFilePath /SourceIndex:$INDEX `
-        /DestinationImageFile:$tempWim /Compress:recovery | Out-Null
-    
-    Remove-Item -Path $wimFilePath -Force
-    Rename-Item -Path $tempWim -NewName "install.wim"
-    
-    Write-Log "Install.wim export complete"
+    if ($ESD) {
+        Write-Log "Exporting image as ESD with maximum compression (this may take 15-20 minutes)..."
+        $tempImg = "$tiny11Dir\sources\install.esd"
+        & Dism.exe /Export-Image /SourceImageFile:$wimFilePath /SourceIndex:$INDEX `
+            /DestinationImageFile:$tempImg /Compress:recovery | Out-Null
+        
+        Remove-Item -Path $wimFilePath -Force
+        Write-Log "Install.esd export complete"
+    } else {
+        Write-Log "Exporting image as WIM with maximum compression (this may take 10-15 minutes)..."
+        $tempImg = "$tiny11Dir\sources\install2.wim"
+        & Dism.exe /Export-Image /SourceImageFile:$wimFilePath /SourceIndex:$INDEX `
+            /DestinationImageFile:$tempImg /Compress:max | Out-Null
+        
+        Remove-Item -Path $wimFilePath -Force
+        Rename-Item -Path $tempImg -NewName "install.wim"
+        Write-Log "Install.wim export complete"
+    }
 }
 
 function Invoke-BootImageProcessing {
