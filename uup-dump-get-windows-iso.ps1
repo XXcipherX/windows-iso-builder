@@ -257,8 +257,25 @@ function Get-IsoWindowsImages($isoPath) {
   Write-CleanLine "Mounting $isoPath"
   $isoImage = Mount-DiskImage $isoPath -PassThru
   try {
-    $isoVolume = $isoImage | Get-Volume
-    $installPath = if ($esd) { "$($isoVolume.DriveLetter):\sources\install.esd" } else { "$($isoVolume.DriveLetter):\sources\install.wim" }
+    $driveLetter = $null
+    for ($attempt = 0; $attempt -lt 10 -and -not $driveLetter; $attempt++) {
+      $isoVolume = $isoImage | Get-Volume -ErrorAction SilentlyContinue
+      if ($isoVolume) {
+        $driveLetter = $isoVolume |
+          Where-Object { $_.PSObject.Properties.Name -contains 'DriveLetter' -and $_.DriveLetter } |
+          Select-Object -First 1 -ExpandProperty DriveLetter
+      }
+
+      if (-not $driveLetter) {
+        Start-Sleep -Milliseconds 500
+      }
+    }
+
+    if (-not $driveLetter) {
+      throw "Mounted ISO has no accessible drive letter: $isoPath"
+    }
+
+    $installPath = if ($esd) { "${driveLetter}:\sources\install.esd" } else { "${driveLetter}:\sources\install.wim" }
     Write-CleanLine "Getting Windows images from $installPath"
     Get-WindowsImage -ImagePath $installPath | ForEach-Object {
       $image = Get-WindowsImage -ImagePath $installPath -Index $_.ImageIndex
