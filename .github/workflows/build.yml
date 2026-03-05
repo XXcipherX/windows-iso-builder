@@ -1,0 +1,384 @@
+name: Build Windows
+run-name: >
+  ${{ inputs.versions }}
+  ${{ fromJSON('{"Pro":"PRO","Home":"HOME","Multi":"MULTI"}')[inputs.edition] }}
+  ${{ fromJSON('{"x64":"X64","arm64":"ARM64"}')[inputs.architecture] }}
+  ${{ fromJSON('{
+    "Arabic (Saudi Arabia)":"AR","Bulgarian (Bulgaria)":"BG","Czech (Czech Republic)":"CS","Danish (Denmark)":"DA","German (Germany)":"DE","Greek (Greece)":"EL",
+    "English (United Kingdom)":"EN","English (United States)":"EN","Spanish (Spain)":"ES","Spanish (Mexico)":"ES","Estonian (Estonia)":"ET","Finnish (Finland)":"FI",
+    "French (Canada)":"FR","French (France)":"FR","Hebrew (Israel)":"HE","Croatian (Croatia)":"HR","Hungarian (Hungary)":"HU","Italian (Italy)":"IT",
+    "Japanese (Japan)":"JA","Korean (Korea)":"KO","Lithuanian (Lithuania)":"LT","Latvian (Latvia)":"LV","Norwegian Bokmål (Norway)":"NB",
+    "Dutch (Netherlands)":"NL","Polish (Poland)":"PL","Portuguese (Brazil)":"PT","Portuguese (Portugal)":"PT","Romanian (Romania)":"RO","Russian (Russia)":"RU",
+    "Slovak (Slovakia)":"SK","Slovenian (Slovenia)":"SL","Serbian (Latin, Serbia)":"SR","Swedish (Sweden)":"SV","Thai (Thailand)":"TH","Turkish (Turkey)":"TR",
+    "Ukrainian (Ukraine)":"UK","Chinese (Simplified, China)":"ZH","Chinese (Traditional, Taiwan)":"ZH"
+  }')[inputs.language] }}
+  ${{ inputs.esd && 'ESD' || '' }}
+  ${{ inputs.netfx3 && 'NETFX3' || '' }}
+  ${{ inputs.tiny11 && 'TINY11' || '' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: "Windows architecture to build"
+        type: choice
+        options: [x64, arm64]
+        default: x64
+        required: true
+      versions:
+        description: "Windows version to build"
+        type: choice
+        options:
+          - Windows 10 22H2
+          - Windows 11 23H2
+          - Windows 11 24H2
+          - Windows 11 24H2 BETA
+          - Windows 11 25H2
+          - Windows 11 25H2 BETA
+          - Windows 11 26H1
+          - Windows DEV
+          - Windows CANARY
+        default: Windows 11 25H2
+        required: true
+      edition:
+        description: "Windows edition to build"
+        type: choice
+        options: [Pro, Home, Multi]
+        default: Pro
+        required: true
+      language:
+        description: "Language"
+        type: choice
+        options:
+          - Arabic (Saudi Arabia)
+          - Bulgarian (Bulgaria)
+          - Czech (Czech Republic)
+          - Danish (Denmark)
+          - German (Germany)
+          - Greek (Greece)
+          - English (United Kingdom)
+          - English (United States)
+          - Spanish (Spain)
+          - Spanish (Mexico)
+          - Estonian (Estonia)
+          - Finnish (Finland)
+          - French (Canada)
+          - French (France)
+          - Hebrew (Israel)
+          - Croatian (Croatia)
+          - Hungarian (Hungary)
+          - Italian (Italy)
+          - Japanese (Japan)
+          - Korean (Korea)
+          - Lithuanian (Lithuania)
+          - Latvian (Latvia)
+          - "Norwegian Bokmål (Norway)"
+          - Dutch (Netherlands)
+          - Polish (Poland)
+          - Portuguese (Brazil)
+          - Portuguese (Portugal)
+          - Romanian (Romania)
+          - Russian (Russia)
+          - Slovak (Slovakia)
+          - Slovenian (Slovenia)
+          - Serbian (Latin, Serbia)
+          - Swedish (Sweden)
+          - Thai (Thailand)
+          - Turkish (Turkey)
+          - Ukrainian (Ukraine)
+          - Chinese (Simplified, China)
+          - Chinese (Traditional, Taiwan)
+        default: English (United States)
+        required: true
+      revision:
+        description: "Revision number (optional)"
+        type: string
+        required: false
+      esd:
+        description: "Use ESD compression"
+        type: boolean
+        required: true
+        default: false
+      netfx3:
+        description: "Add .NET Framework 3.5"
+        type: boolean
+        required: true
+        default: false
+      tiny11:
+        description: "Apply Tiny11 optimization (debloat, registry tweaks, system requirements bypass)"
+        type: boolean
+        required: true
+        default: true
+
+jobs:
+  build:
+    runs-on: ${{ fromJSON('{"x64":"windows-latest","arm64":"windows-11-arm"}')[inputs.architecture] }}
+    timeout-minutes: 360
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Map inputs
+        id: map
+        shell: pwsh
+        run: |
+          $langMap = @{
+            'Arabic (Saudi Arabia)'='ar-sa'
+            'Bulgarian (Bulgaria)'='bg-bg'
+            'Czech (Czech Republic)'='cs-cz'
+            'Danish (Denmark)'='da-dk'
+            'German (Germany)'='de-de'
+            'Greek (Greece)'='el-gr'
+            'English (United Kingdom)'='en-gb'
+            'English (United States)'='en-us'
+            'Spanish (Spain)'='es-es'
+            'Spanish (Mexico)'='es-mx'
+            'Estonian (Estonia)'='et-ee'
+            'Finnish (Finland)'='fi-fi'
+            'French (Canada)'='fr-ca'
+            'French (France)'='fr-fr'
+            'Hebrew (Israel)'='he-il'
+            'Croatian (Croatia)'='hr-hr'
+            'Hungarian (Hungary)'='hu-hu'
+            'Italian (Italy)'='it-it'
+            'Japanese (Japan)'='ja-jp'
+            'Korean (Korea)'='ko-kr'
+            'Lithuanian (Lithuania)'='lt-lt'
+            'Latvian (Latvia)'='lv-lv'
+            'Norwegian Bokmål (Norway)'='nb-no'
+            'Dutch (Netherlands)'='nl-nl'
+            'Polish (Poland)'='pl-pl'
+            'Portuguese (Brazil)'='pt-br'
+            'Portuguese (Portugal)'='pt-pt'
+            'Romanian (Romania)'='ro-ro'
+            'Russian (Russia)'='ru-ru'
+            'Slovak (Slovakia)'='sk-sk'
+            'Slovenian (Slovenia)'='sl-si'
+            'Serbian (Latin, Serbia)'='sr-latn-rs'
+            'Swedish (Sweden)'='sv-se'
+            'Thai (Thailand)'='th-th'
+            'Turkish (Turkey)'='tr-tr'
+            'Ukrainian (Ukraine)'='uk-ua'
+            'Chinese (Simplified, China)'='zh-cn'
+            'Chinese (Traditional, Taiwan)'='zh-tw'
+          }
+
+          $verMap = @{
+            'Windows 10 22H2'      = 'windows-10'
+            'Windows 11 23H2'      = 'windows-11old'
+            'Windows 11 24H2'      = 'windows-11'
+            'Windows 11 24H2 BETA' = 'windows-11beta'
+            'Windows 11 25H2'      = 'windows-11new'
+            'Windows 11 25H2 BETA' = 'windows-11dev'
+            'Windows 11 26H1'      = 'windows-1126h1'
+            'Windows DEV'          = 'windows-dev'
+            'Windows CANARY'       = 'windows-canary'
+          }
+
+          $langCode = $langMap['${{ inputs.language }}']
+          $verCode  = $verMap['${{ inputs.versions }}']
+
+          $opts = ''
+          if ('${{ inputs.esd }}' -eq 'true')     { $opts += ' -esd' }
+          if ('${{ inputs.netfx3 }}' -eq 'true')  { $opts += ' -netfx3' }
+          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
+            $opts += ' -revision "${{ inputs.revision }}"'
+          }
+          $opts = $opts.Trim()
+
+          echo "lang=$langCode"    >> $env:GITHUB_OUTPUT
+          echo "version=$verCode"  >> $env:GITHUB_OUTPUT
+          if ($opts) {
+            echo "options=$opts"   >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Free disk space (safe)
+        shell: pwsh
+        run: |
+         Write-Host "Free space before:"
+         Get-PSDrive C
+
+         Remove-Item -Recurse -Force "C:\Program Files\Microsoft Visual Studio" -ErrorAction SilentlyContinue
+         Remove-Item -Recurse -Force "C:\Program Files (x86)\Microsoft Visual Studio" -ErrorAction SilentlyContinue
+         Remove-Item -Recurse -Force "C:\Program Files\Android" -ErrorAction SilentlyContinue
+         Remove-Item -Recurse -Force "C:\ProgramData\chocolatey\lib" -ErrorAction SilentlyContinue
+         Remove-Item -Recurse -Force "$env:TEMP\*" -ErrorAction SilentlyContinue
+         Remove-Item -Recurse -Force "C:\Windows\Temp\*" -ErrorAction SilentlyContinue
+
+         Write-Host "Free space after:"
+         Get-PSDrive C
+
+      # ============================================================
+      # STAGE 1: Build Windows ISO via UUP dump
+      # ============================================================
+
+      - name: Build Windows ISO (UUP dump)
+        id: build_windows
+        shell: pwsh
+        run: |
+          pwsh uup-dump-get-windows-iso.ps1 ${{ steps.map.outputs.version }} c:/output -architecture ${{ inputs.architecture }} -edition ${{ inputs.edition }} -lang ${{ steps.map.outputs.lang }} ${{ steps.map.outputs.options }}
+
+      # ============================================================
+      # STAGE 2: Tiny11 optimization (optional)
+      # ============================================================
+
+      - name: Prepare autounattend.xml for Tiny11
+        if: ${{ inputs.tiny11 }}
+        shell: pwsh
+        run: |
+          if (Test-Path "autounattend.xml") {
+            Write-Output "Copying autounattend.xml to scripts directory"
+            Copy-Item "autounattend.xml" "scripts\autounattend.xml" -Force
+          } else {
+            Write-Error "autounattend.xml not found in repository root!"
+            exit 1
+          }
+
+      - name: Run Tiny11 optimization
+        if: ${{ inputs.tiny11 }}
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+
+          $isoPath = $env:ISO_PATH
+          if (-not $isoPath -or -not (Test-Path $isoPath)) {
+            Write-Error "Built ISO not found at: $isoPath"
+            exit 1
+          }
+
+          Write-Output "=== Starting Tiny11 Optimization ==="
+          Write-Output "Source ISO: $isoPath"
+          Write-Output "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+
+          $startTime = Get-Date
+
+          .\scripts\tiny11maker-headless.ps1 -ISOPath $isoPath -INDEX 1
+
+          $buildTime = (Get-Date) - $startTime
+          Write-Output "Tiny11 optimization completed in $($buildTime.TotalMinutes.ToString('F2')) minutes"
+
+      - name: Finalize Tiny11 ISO
+        if: ${{ inputs.tiny11 }}
+        shell: pwsh
+        run: |
+          $tiny11Iso = ".\scripts\tiny11.iso"
+
+          if (-not (Test-Path $tiny11Iso)) {
+            Write-Error "Tiny11 ISO was not created!"
+            Write-Output "Contents of scripts directory:"
+            Get-ChildItem -Path ".\scripts" | Format-Table Name, Length, LastWriteTime
+            exit 1
+          }
+
+          # Replace the original ISO with the optimized one
+          $originalIso = $env:ISO_PATH
+          if (Test-Path $originalIso) {
+            Remove-Item -Path $originalIso -Force
+          }
+
+          $destinationDir = Split-Path $originalIso -Parent
+          $isoName = $env:ISO_NAME
+          Move-Item -Path $tiny11Iso -Destination "$destinationDir\$isoName" -Force
+
+          # Recalculate checksum for the optimized ISO
+          $newIsoPath = "$destinationDir\$isoName"
+          Write-Output "Recalculating checksum for optimized ISO..."
+          $newChecksum = (Get-FileHash -Algorithm SHA256 $newIsoPath).Hash.ToLowerInvariant()
+          Set-Content -Encoding ascii -NoNewline -Path "$newIsoPath.sha256.txt" -Value $newChecksum
+
+          $sizeGB = [math]::Round((Get-Item $newIsoPath).Length / 1GB, 2)
+          Write-Output "Tiny11 ISO finalized: $isoName (${sizeGB}GB)"
+          Write-Output "SHA256: $newChecksum"
+
+          # Update env for summary
+          echo "ISO_PATH=$newIsoPath" >> $env:GITHUB_ENV
+          echo "ISO_CHECKSUM=$newChecksum" >> $env:GITHUB_ENV
+          echo "ISO_SIZE_GB=$sizeGB" >> $env:GITHUB_ENV
+
+      # ============================================================
+      # STAGE 3: Upload & Summary
+      # ============================================================
+
+      - name: Upload ISO artifact
+        id: upload_iso_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ISO_NAME }}
+          path: c:/output/*.ISO
+          if-no-files-found: error
+
+      - name: Set artifact_url
+        id: set_artifact_url
+        shell: pwsh
+        run: echo "artifact_url=${{ steps.upload_iso_artifact.outputs.artifact-url }}" >> $env:GITHUB_ENV
+
+      - name: Build summary
+        id: build_summary
+        shell: pwsh
+        run: |
+          $iso = Get-Content (Resolve-Path c:/output/*.json) | ConvertFrom-Json
+          $imageNames = $iso.images | ForEach-Object { $_.name }
+          if ($imageNames.Count -gt 1) {
+            if ($imageNames[0] -match '^(Windows (10|11))\s*(.*)') {
+              $prefix = $matches[1]
+              $first = $imageNames[0]
+              $rest = $imageNames[1..($imageNames.Count - 1)] | ForEach-Object { ($_ -replace "^$prefix\s*", '') }
+              $finalImageName = $first + '/' + ($rest -join '/')
+            } else {
+              $finalImageName = $imageNames -join '/'
+            }
+          } else {
+            $finalImageName = $imageNames
+          }
+
+          # Build config row only when there are any options
+          $opts = '${{ steps.map.outputs.options }}'
+          $optsRow = $null
+          if (-not [string]::IsNullOrWhiteSpace($opts)) {
+            $descMap = @{
+              '-esd'     = 'Use ESD compression'
+              '-netfx3'  = 'Add .NET Framework 3.5'
+            }
+            $items = $opts -split '\s+' |
+              Where-Object { $_ -and $_.Trim() -ne '' } |
+              ForEach-Object {
+                $k = $_.ToLower()
+                if ($descMap.ContainsKey($k)) { $descMap[$k] } else { $_.TrimStart('-') }
+              } | Select-Object -Unique
+          
+            if ($items.Count -gt 0) {
+              $optsFormatted = ($items | ForEach-Object { "<li>$($_)</li>" }) -join ''
+              $optsRow = "| Build config | <ul>$optsFormatted</ul> |"
+            }
+          }
+
+          $tiny11Row = ""
+          if ('${{ inputs.tiny11 }}' -eq 'true') {
+            $tiny11Row = "| Tiny11 | ✅ Applied (debloat + registry tweaks + bypass) |"
+          }
+
+          Add-Content $env:GITHUB_STEP_SUMMARY @"
+          ### FILE INFO:
+          | Property | Value |
+          | :--- | :--- |
+          | Name | $finalImageName $($iso.version) |
+          | Build | $($iso.build) |
+          | Architecture | ${{ inputs.architecture }} |
+          "@
+
+          if ($optsRow) {
+            Add-Content $env:GITHUB_STEP_SUMMARY $optsRow
+          }
+          if ($tiny11Row) {
+            Add-Content $env:GITHUB_STEP_SUMMARY $tiny11Row
+          }
+
+          Add-Content $env:GITHUB_STEP_SUMMARY @"
+          | Checksum | $($iso.checksum) |
+          | Image Name | $finalImageName |
+          | Iso | [$env:ISO_NAME]($env:artifact_url) |
+          | UUP dump | [$($iso.title)]($($iso.uupDump.downloadUrl)) |
+          "@
