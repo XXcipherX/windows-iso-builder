@@ -255,6 +255,7 @@ jobs:
 
           $startTime = Get-Date
 
+          # INDEX=1: UUP dump builds a single-edition ISO, so the WIM always has index 1
           .\scripts\tiny11maker-headless.ps1 -ISOPath $isoPath -INDEX 1
 
           $buildTime = (Get-Date) - $startTime
@@ -334,6 +335,9 @@ jobs:
             $finalImageName = $imageNames
           }
 
+          # Use Tiny11 checksum if available, otherwise use UUP dump checksum
+          $checksum = if ($env:ISO_CHECKSUM) { $env:ISO_CHECKSUM } else { $iso.checksum }
+
           # Build config row only when there are any options
           $opts = '${{ steps.map.outputs.options }}'
           $optsRow = $null
@@ -377,7 +381,7 @@ jobs:
           }
 
           Add-Content $env:GITHUB_STEP_SUMMARY @"
-          | Checksum | $($iso.checksum) |
+          | Checksum | $checksum |
           | Image Name | $finalImageName |
           | Iso | [$env:ISO_NAME]($env:artifact_url) |
           | UUP dump | [$($iso.title)]($($iso.uupDump.downloadUrl)) |

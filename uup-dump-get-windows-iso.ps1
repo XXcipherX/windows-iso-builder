@@ -437,7 +437,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
   Move-Item -Force $sourceIsoPath "$destinationDirectory/$IsoName"
 
   Write-Output "ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-  $fullIsoPath = Resolve-Path "$destinationDirectory/$IsoName"
+  $fullIsoPath = (Resolve-Path "$destinationDirectory/$IsoName").Path
   Write-Output "ISO_PATH=$fullIsoPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
   Write-CleanLine 'All Done.'
 }
