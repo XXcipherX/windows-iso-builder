@@ -561,6 +561,9 @@ function Dismount-RegistryHives {
 function Optimize-WindowsImage {
     Write-Log "Cleaning up Windows image (this may take 10-15 minutes)..."
     & dism.exe /Image:$scratchDir /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "DISM cleanup failed with exit code $LASTEXITCODE"
+    }
     Write-Log "Image cleanup complete"
 }
 
@@ -573,14 +576,20 @@ function Dismount-AndExport {
         $tempImg = "$tiny11Dir\sources\install.esd"
         & Dism.exe /Export-Image /SourceImageFile:$wimFilePath /SourceIndex:$INDEX `
             /DestinationImageFile:$tempImg /Compress:recovery | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "DISM ESD export failed with exit code $LASTEXITCODE"
+        }
         
         Remove-Item -Path $wimFilePath -Force
         Write-Log "Install.esd export complete"
     } else {
-        Write-Log "Exporting image as WIM with maximum compression (this may take 10-15 minutes)..."
+        Write-Log "Exporting image as WIM with recovery compression (this may take 15-20 minutes)..."
         $tempImg = "$tiny11Dir\sources\install2.wim"
         & Dism.exe /Export-Image /SourceImageFile:$wimFilePath /SourceIndex:$INDEX `
-            /DestinationImageFile:$tempImg /Compress:max | Out-Null
+            /DestinationImageFile:$tempImg /Compress:recovery | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "DISM WIM export failed with exit code $LASTEXITCODE"
+        }
         
         Remove-Item -Path $wimFilePath -Force
         Rename-Item -Path $tempImg -NewName "install.wim"
