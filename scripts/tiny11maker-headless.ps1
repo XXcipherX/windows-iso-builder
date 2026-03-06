@@ -109,7 +109,7 @@ function Set-RegistryValue {
 function Remove-RegistryValue {
     param([string]$path)
     try {
-        & 'reg' 'delete' $path '/f' | Out-Null
+        & 'reg' 'delete' $path '/f' 2>&1 | Out-Null
         Write-Log "Removed registry: $path"
     }
     catch {
