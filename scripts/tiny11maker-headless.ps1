@@ -583,10 +583,10 @@ function Dismount-AndExport {
         Remove-Item -Path $wimFilePath -Force
         Write-Log "Install.esd export complete"
     } else {
-        Write-Log "Exporting image as WIM with recovery compression (this may take 15-20 minutes)..."
+        Write-Log "Exporting image as WIM with maximum compression (this may take 1-2 minutes)..."
         $tempImg = "$tiny11Dir\sources\install2.wim"
         & Dism.exe /Export-Image /SourceImageFile:$wimFilePath /SourceIndex:$INDEX `
-            /DestinationImageFile:$tempImg /Compress:recovery | Out-Null
+            /DestinationImageFile:$tempImg /Compress:max | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw "DISM WIM export failed with exit code $LASTEXITCODE"
         }
