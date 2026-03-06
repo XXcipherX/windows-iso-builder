@@ -728,20 +728,21 @@ try {
         Write-Log "Mounting ISO: $resolvedPath"
         $mountResult = Mount-DiskImage -ImagePath $resolvedPath -PassThru
         
-        $ISO = $null
-        for ($attempt = 0; $attempt -lt 10 -and -not $ISO; $attempt++) {
+        $foundISO = $null
+        for ($attempt = 0; $attempt -lt 10 -and -not $foundISO; $attempt++) {
             $isoVolume = $mountResult | Get-Volume -ErrorAction SilentlyContinue
             if ($isoVolume) {
-                $ISO = $isoVolume |
+                $foundISO = $isoVolume |
                 Where-Object { $_.PSObject.Properties.Name -contains 'DriveLetter' -and $_.DriveLetter } |
                 Select-Object -First 1 -ExpandProperty DriveLetter
             }
-            if (-not $ISO) {
+            if (-not $foundISO) {
                 Start-Sleep -Milliseconds 500
             }
         }
         
-        if (-not $ISO) { throw "Failed to get drive letter after mounting $resolvedPath" }
+        if (-not $foundISO) { throw "Failed to get drive letter after mounting $resolvedPath" }
+        $ISO = $foundISO
         Write-Log "ISO mounted at drive: ${ISO}:"
         $script:AutoMountedISO = $resolvedPath
     }
