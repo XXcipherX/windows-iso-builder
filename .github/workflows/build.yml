@@ -256,11 +256,14 @@ jobs:
 
           $startTime = Get-Date
 
-          $args = @("-ISOPath", "`"$isoPath`"", "-INDEX", 1)
-          if ('${{ inputs.esd }}' -eq 'true') { $args += "-ESD" }
-          
+          $splat = @{
+            ISOPath = $isoPath
+            INDEX   = 1
+          }
+          if ('${{ inputs.esd }}' -eq 'true') { $splat.ESD = $true }
+
           # INDEX=1: UUP dump builds a single-edition ISO, so the WIM always has index 1
-          Invoke-Expression ".\scripts\tiny11maker-headless.ps1 $($args -join ' ')"
+          .\scripts\tiny11maker-headless.ps1 @splat
 
           $buildTime = (Get-Date) - $startTime
           Write-Output "Tiny11 optimization completed in $($buildTime.TotalMinutes.ToString('F2')) minutes"

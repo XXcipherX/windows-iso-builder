@@ -582,7 +582,8 @@ function Dismount-AndExport {
         
         Remove-Item -Path $wimFilePath -Force
         Write-Log "Install.esd export complete"
-    } else {
+    }
+    else {
         Write-Log "Exporting image as WIM with maximum compression (this may take 1-2 minutes)..."
         $tempImg = "$tiny11Dir\sources\install2.wim"
         & Dism.exe /Export-Image /SourceImageFile:$wimFilePath /SourceIndex:$INDEX `
@@ -729,12 +730,25 @@ try {
         $resolvedPath = (Resolve-Path $ISOPath).Path
         Write-Log "Mounting ISO: $resolvedPath"
         $mountResult = Mount-DiskImage -ImagePath $resolvedPath -PassThru
-        Start-Sleep -Seconds 3
-        $ISO = ($mountResult | Get-Volume).DriveLetter
+        
+        $ISO = $null
+        for ($attempt = 0; $attempt -lt 10 -and -not $ISO; $attempt++) {
+            $isoVolume = $mountResult | Get-Volume -ErrorAction SilentlyContinue
+            if ($isoVolume) {
+                $ISO = $isoVolume |
+                Where-Object { $_.PSObject.Properties.Name -contains 'DriveLetter' -and $_.DriveLetter } |
+                Select-Object -First 1 -ExpandProperty DriveLetter
+            }
+            if (-not $ISO) {
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        
         if (-not $ISO) { throw "Failed to get drive letter after mounting $resolvedPath" }
         Write-Log "ISO mounted at drive: ${ISO}:"
         $script:AutoMountedISO = $resolvedPath
-    } elseif (-not $ISO) {
+    }
+    elseif (-not $ISO) {
         throw "Either -ISO or -ISOPath must be specified"
     }
     $DriveLetter = $ISO + ":"
