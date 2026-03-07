@@ -180,21 +180,11 @@ jobs:
 
           $langCode = $langMap['${{ inputs.language }}']
           $verCode  = $verMap['${{ inputs.versions }}']
-
-          $opts = ''
-          # If Tiny11 is enabled, skip UUP dump ESD compression (waste of time, Tiny11 will re-compress it anyway)
-          if ('${{ inputs.esd }}' -eq 'true' -and '${{ inputs.tiny11 }}' -ne 'true') { $opts += ' -esd' }
-          if ('${{ inputs.netfx3 }}' -eq 'true')  { $opts += ' -netfx3' }
-          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
-            $opts += ' -revision "${{ inputs.revision }}"'
-          }
-          $opts = $opts.Trim()
+          $uupEsd   = ('${{ inputs.esd }}' -eq 'true' -and '${{ inputs.tiny11 }}' -ne 'true')
 
           echo "lang=$langCode"    >> $env:GITHUB_OUTPUT
           echo "version=$verCode"  >> $env:GITHUB_OUTPUT
-          if ($opts) {
-            echo "options=$opts"   >> $env:GITHUB_OUTPUT
-          }
+          echo "uup_esd=$uupEsd"   >> $env:GITHUB_OUTPUT
 
       - name: Free disk space (safe)
         shell: pwsh
@@ -220,7 +210,23 @@ jobs:
         id: build_windows
         shell: pwsh
         run: |
-          pwsh uup-dump-get-windows-iso.ps1 ${{ steps.map.outputs.version }} c:/output -architecture ${{ inputs.architecture }} -edition ${{ inputs.edition }} -lang ${{ steps.map.outputs.lang }} ${{ steps.map.outputs.options }}
+          $splat = @{
+            windowsTargetName    = '${{ steps.map.outputs.version }}'
+            destinationDirectory = 'c:/output'
+            architecture         = '${{ inputs.architecture }}'
+            edition              = '${{ inputs.edition }}'
+            lang                 = '${{ steps.map.outputs.lang }}'
+          }
+
+          # If Tiny11 is enabled, skip UUP dump ESD compression (Tiny11 re-compresses it anyway)
+          if ('${{ steps.map.outputs.uup_esd }}' -eq 'true') { $splat.esd = $true }
+          if ('${{ inputs.netfx3 }}' -eq 'true') { $splat.netfx3 = $true }
+
+          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
+            $splat.revision = '${{ inputs.revision }}'
+          }
+
+          .\uup-dump-get-windows-iso.ps1 @splat
 
       # ============================================================
       # STAGE 2: Tiny11 optimization (optional)
@@ -351,25 +357,21 @@ jobs:
           # Use Tiny11 checksum if available, otherwise use UUP dump checksum
           $checksum = if ($env:ISO_CHECKSUM) { $env:ISO_CHECKSUM } else { $iso.checksum }
 
-          # Build config row only when there are any options
-          $opts = '${{ steps.map.outputs.options }}'
           $optsRow = $null
-          if (-not [string]::IsNullOrWhiteSpace($opts)) {
-            $descMap = @{
-              '-esd'     = 'Use ESD compression'
-              '-netfx3'  = 'Add .NET Framework 3.5'
-            }
-            $items = $opts -split '\s+' |
-              Where-Object { $_ -and $_.Trim() -ne '' } |
-              ForEach-Object {
-                $k = $_.ToLower()
-                if ($descMap.ContainsKey($k)) { $descMap[$k] } else { $_.TrimStart('-') }
-              } | Select-Object -Unique
-          
-            if ($items.Count -gt 0) {
-              $optsFormatted = ($items | ForEach-Object { "<li>$($_)</li>" }) -join ''
-              $optsRow = "| Build config | <ul>$optsFormatted</ul> |"
-            }
+          $buildOptions = @()
+          if ('${{ steps.map.outputs.uup_esd }}' -eq 'true') {
+            $buildOptions += 'Use ESD compression'
+          }
+          if ('${{ inputs.netfx3 }}' -eq 'true') {
+            $buildOptions += 'Add .NET Framework 3.5'
+          }
+          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
+            $buildOptions += "Revision: ${{ inputs.revision }}"
+          }
+
+          if ($buildOptions.Count -gt 0) {
+            $optsFormatted = ($buildOptions | ForEach-Object { "<li>$($_)</li>" }) -join ''
+            $optsRow = "| Build config | <ul>$optsFormatted</ul> |"
           }
 
           $tiny11Row = ""
