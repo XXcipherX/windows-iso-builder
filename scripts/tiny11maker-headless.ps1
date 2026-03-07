@@ -97,8 +97,17 @@ function Set-RegistryValue {
         [string]$value
     )
     try {
-        & 'reg' 'add' $path '/v' $name '/t' $type '/d' $value '/f' | Out-Null
-        Write-Log "Set registry: $path\$name = $value"
+        $commandOutput = (& 'reg' 'add' $path '/v' $name '/t' $type '/d' $value '/f' 2>&1 | Out-String).Trim()
+        $exitCode = $LASTEXITCODE
+
+        if ($exitCode -eq 0) {
+            Write-Log "Set registry: $path\$name = $value"
+        }
+        else {
+            $details = if ($commandOutput) { " Output: $commandOutput" } else { "" }
+            Write-Log "Failed to set registry $path\$name (exit code $exitCode).$details" "ERROR"
+            throw "reg add failed with exit code $exitCode for $path\\$name"
+        }
     }
     catch {
         Write-Log "Error setting registry $path\$name : $_" "ERROR"
@@ -109,8 +118,21 @@ function Set-RegistryValue {
 function Remove-RegistryValue {
     param([string]$path)
     try {
-        & 'reg' 'delete' $path '/f' 2>&1 | Out-Null
-        Write-Log "Removed registry: $path"
+        $commandOutput = (& 'reg' 'delete' $path '/f' 2>&1 | Out-String).Trim()
+        $exitCode = $LASTEXITCODE
+
+        if ($exitCode -eq 0) {
+            Write-Log "Removed registry: $path"
+        }
+        else {
+            $details = if ($commandOutput) { " Output: $commandOutput" } else { "" }
+            if ($commandOutput -match 'unable to find the specified registry key or value') {
+                Write-Log "Registry key already absent: $path (exit code $exitCode).$details" "INFO"
+            }
+            else {
+                Write-Log "Registry not removed: $path (exit code $exitCode).$details" "WARN"
+            }
+        }
     }
     catch {
         Write-Log "Error removing registry $path : $_" "WARN"
