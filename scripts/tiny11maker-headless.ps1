@@ -99,19 +99,19 @@ function Set-RegistryValue {
     try {
         $commandOutput = (& 'reg' 'add' $path '/v' $name '/t' $type '/d' $value '/f' 2>&1 | Out-String).Trim()
         $exitCode = $LASTEXITCODE
-
-        if ($exitCode -eq 0) {
-            Write-Log "Set registry: $path\$name = $value"
-        }
-        else {
-            $details = if ($commandOutput) { " Output: $commandOutput" } else { "" }
-            Write-Log "Failed to set registry $path\$name (exit code $exitCode).$details" "ERROR"
-            throw "reg add failed with exit code $exitCode for $path\\$name"
-        }
     }
     catch {
         Write-Log "Error setting registry $path\$name : $_" "ERROR"
         throw
+    }
+
+    if ($exitCode -eq 0) {
+        Write-Log "Set registry: $path\$name = $value"
+    }
+    else {
+        $details = if ($commandOutput) { " Output: $commandOutput" } else { "" }
+        Write-Log "Failed to set registry $path\$name (exit code $exitCode).$details" "ERROR"
+        throw "reg add failed with exit code $exitCode for $path\$name"
     }
 }
 
