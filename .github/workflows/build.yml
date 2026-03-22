@@ -329,12 +329,41 @@ jobs:
       # STAGE 3: Upload & Summary
       # ============================================================
 
+      - name: Generate verification instructions
+        shell: pwsh
+        run: |
+          $isoPath = $env:ISO_PATH
+          $isoDir = Split-Path $isoPath -Parent
+          $isoName = Split-Path $isoPath -Leaf
+          
+          Write-Output "Preparing verification files for $isoName..."
+          
+          # Reuse the SHA256 checksum that was already calculated in STAGE 1 or STAGE 2
+          $sha256 = (Get-Content "$isoPath.sha256.txt" -Raw).Trim()
+          Set-Content -Encoding ascii -Path "$isoDir\$isoName.sha256" -Value "$sha256 *$isoName"
+          
+          $instructions = @"
+          To verify the authenticity of the ISO file, run the following commands in the folder containing the ISO:
+          
+          Windows (PowerShell):
+          Get-FileHash -Algorithm SHA256 "$isoName"
+          
+          Linux / macOS:
+          sha256sum -c "$isoName.sha256"
+          # Or manually:
+          sha256sum "$isoName"
+          "@
+          Set-Content -Encoding utf8 -Path "$isoDir\verify_checksums.txt" -Value $instructions
+
       - name: Upload ISO artifact
         id: upload_iso_artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ISO_NAME }}
-          path: c:/output/*.ISO
+          path: |
+            c:/output/*.ISO
+            c:/output/*.sha256
+            c:/output/verify_checksums.txt
           if-no-files-found: error
 
       - name: Set artifact_url
