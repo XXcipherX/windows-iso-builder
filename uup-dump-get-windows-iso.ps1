@@ -161,6 +161,10 @@ function Get-UupDumpIso($name, $target) {
     }
   | Where-Object {
       if (!$preview) {
+        if ($_.Value.title -notmatch '(?i)version') {
+          Write-CleanLine "Skipping. Expected title to contain 'version'."
+          return $false
+        }
         $ok = ($target.search -like '*preview*') -or ($_.Value.title -notlike '*preview*')
         if (-not $ok) {
           Write-CleanLine "Skipping.
