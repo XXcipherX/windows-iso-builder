@@ -131,6 +131,30 @@ function New-QueryString([hashtable]$parameters) {
   @($parameters.GetEnumerator() | ForEach-Object { "$($_.Key)=$([System.Net.WebUtility]::UrlEncode([string]$_.Value))" }) -join '&'
 }
 
+function Get-ApiItemNames($value) {
+  if ($null -eq $value) { return @() }
+
+  if ($value -is [System.Collections.IDictionary]) {
+    return @($value.Keys | ForEach-Object { [string]$_ })
+  }
+
+  if ($value -is [System.Collections.IEnumerable] -and -not ($value -is [string])) {
+    return @($value | ForEach-Object {
+      if ($null -ne $_) { [string]$_ }
+    })
+  }
+
+  return @($value.PSObject.Properties | ForEach-Object { $_.Name })
+}
+
+function Get-UupBuildSortKey($build) {
+  try {
+    return [version]([string]$build)
+  } catch {
+    return [version]'0.0'
+  }
+}
+
 function Invoke-UupDumpApi([string]$name, [hashtable]$body) {
   for ($n = 0; $n -lt 15; ++$n) {
     if ($n) {
@@ -152,100 +176,121 @@ function Get-UupDumpIso($name, $target) {
   Write-CleanLine "Getting the $name metadata"
   $result = Invoke-UupDumpApi listid @{ search = $target.search }
 
-  $result.response.builds.PSObject.Properties
-  | ForEach-Object {
-      $id = $_.Value.uuid
-      $uupDumpUrl = 'https://uupdump.net/selectlang.php?' + (New-QueryString @{ id = $id })
-      Write-CleanLine "Processing $name $id ($uupDumpUrl)"
-      $_
-    }
-  | Where-Object {
-      if (!$preview) {
-        if ($_.Value.title -notmatch '(?i)version') {
-          Write-CleanLine "Skipping. Expected title to contain 'version'."
-          return $false
-        }
-        $ok = ($target.search -like '*preview*') -or ($_.Value.title -notlike '*preview*')
-        if (-not $ok) {
-          Write-CleanLine "Skipping.
+  $candidateBuilds = @(
+    $result.response.builds.PSObject.Properties |
+    ForEach-Object {
+        $id = $_.Value.uuid
+        $uupDumpUrl = 'https://uupdump.net/selectlang.php?' + (New-QueryString @{ id = $id })
+        Write-CleanLine "Processing $name $id ($uupDumpUrl)"
+        $_
+      } |
+    Where-Object {
+        if (!$preview) {
+          if ($_.Value.title -notmatch '(?i)\bversion\b') {
+            Write-CleanLine "Skipping. Expected title to contain 'version'."
+            return $false
+          }
+
+          $ok = ($target.search -like '*preview*') -or ($_.Value.title -notlike '*preview*')
+          if (-not $ok) {
+            Write-CleanLine "Skipping.
 L1: Expected preview=false.
 L2: Got preview=true."
+          }
+          return $ok
         }
-        return $ok
+        $true
       }
-      $true
-    }
-  | ForEach-Object {
-      $id = $_.Value.uuid
-      Write-CleanLine "Getting the $name $id langs metadata"
-      $result = Invoke-UupDumpApi listlangs @{ id = $id }
-      if ($result.response.updateInfo.build -ne $_.Value.build) {
-        throw 'for some reason listlangs returned an unexpected build'
-      }
-      $_.Value | Add-Member -NotePropertyMembers @{ langs = $result.response.langFancyNames; info = $result.response.updateInfo }
+  )
 
-      $langs = $_.Value.langs.PSObject.Properties.Name
-      $eds = if ($langs -contains $lang) {
-        Write-CleanLine "Getting the $name $id editions metadata"
-        $result = Invoke-UupDumpApi listeditions @{ id = $id; lang = $lang }
-        $result.response.editionFancyNames
-      } else {
-        Write-CleanLine "Skipping.
+  $candidateBuilds = @(
+    $candidateBuilds |
+    ForEach-Object {
+        $id = $_.Value.uuid
+        Write-CleanLine "Getting the $name $id langs metadata"
+        $result = Invoke-UupDumpApi listlangs @{ id = $id }
+        if ($result.response.updateInfo.build -ne $_.Value.build) {
+          throw 'for some reason listlangs returned an unexpected build'
+        }
+        $_.Value | Add-Member -NotePropertyMembers @{ langs = $result.response.langFancyNames; info = $result.response.updateInfo }
+
+        $langs = @(Get-ApiItemNames $_.Value.langs)
+        $eds = if ($langs -contains $lang) {
+          Write-CleanLine "Getting the $name $id editions metadata"
+          $result = Invoke-UupDumpApi listeditions @{ id = $id; lang = $lang }
+          $result.response.editionFancyNames
+        } else {
+          Write-CleanLine "Skipping.
 L3: Expected langs=$lang.
 L4: Got langs=$($langs -join ',')."
-        [PSCustomObject]@{}
-      }
-      $_.Value | Add-Member -NotePropertyMembers @{ editions = $eds }
-      $_
-    }
-  | Where-Object {
-      $langs = $_.Value.langs.PSObject.Properties.Name
-      $editions = $_.Value.editions.PSObject.Properties.Name
-      $res = $true
+          [PSCustomObject]@{}
+        }
+        $_.Value | Add-Member -NotePropertyMembers @{ editions = $eds }
+        $_
+      } |
+    Where-Object {
+        $langs = @(Get-ApiItemNames $_.Value.langs)
+        $editions = @(Get-ApiItemNames $_.Value.editions)
+        $res = $true
 
-      $expectedRing = if ($ringLower) { $ringLower.ToUpper() } else { 'RETAIL' }
-      if ($ringLower) {
-        $actual = ($_.Value.info.ring).ToUpper()
-        if ($ringLower -in @('dev','beta')) {
-          if ($actual -notin @($expectedRing, 'WIF', 'WIS')) {
-            Write-CleanLine "Skipping.
+        $expectedRing = if ($ringLower) { $ringLower.ToUpper() } else { 'RETAIL' }
+        if ($ringLower) {
+          $actual = ($_.Value.info.ring).ToUpper()
+          if ($ringLower -in @('dev','beta')) {
+            if ($actual -notin @($expectedRing, 'WIF', 'WIS')) {
+              Write-CleanLine "Skipping.
 L5: Expected ring match for $expectedRing, WIS or WIF. Got ring=$actual."
-            $res = $false
-          }
-        } else {
-          if ($actual -ne $expectedRing) {
-            Write-CleanLine "Skipping. Expected ring match for $expectedRing. Got ring=$actual."
-            $res = $false
+              $res = $false
+            }
+          } else {
+            if ($actual -ne $expectedRing) {
+              Write-CleanLine "Skipping. Expected ring match for $expectedRing. Got ring=$actual."
+              $res = $false
+            }
           }
         }
-      }
 
-      if ($langs -notcontains $lang) {
-        Write-CleanLine "Skipping. Expected langs=$lang. Got langs=$($langs -join ',')."
-        $res = $false
-      }
-
-      if ((Get-EditionName $edition) -eq "Multi") {
-        if (($editions -notcontains "Professional") -and ($editions -notcontains "Core")) {
-          Write-CleanLine "Skipping.
-L6: Expected editions=Multi (Professional/Core). Got editions=$($editions -join ',')."
+        if ($langs -notcontains $lang) {
+          Write-CleanLine "Skipping. Expected langs=$lang. Got langs=$($langs -join ',')."
           $res = $false
         }
-      } elseif ($editions -notcontains (Get-EditionName $edition)) {
-        Write-CleanLine ("Skipping. Expected editions={0}.
-L7: Got editions={1}." -f (Get-EditionName $edition), ($editions -join ','))
-        $res = $false
-      }
 
-      $res
+        if ((Get-EditionName $edition) -eq "Multi") {
+          if (($editions -notcontains "Professional") -and ($editions -notcontains "Core")) {
+            Write-CleanLine "Skipping.
+L6: Expected editions=Multi (Professional/Core). Got editions=$($editions -join ',')."
+            $res = $false
+          }
+        } elseif ($editions -notcontains (Get-EditionName $edition)) {
+          Write-CleanLine ("Skipping. Expected editions={0}.
+L7: Got editions={1}." -f (Get-EditionName $edition), ($editions -join ','))
+          $res = $false
+        }
+
+        $res
+      }
+  )
+
+  if ($candidateBuilds) {
+    Write-CleanLine "Matched UUP candidates for ${name}:"
+    @($candidateBuilds) | ForEach-Object {
+      $ring = if ($_.Value.PSObject.Properties.Name -contains 'info' -and $_.Value.info -and $_.Value.info.ring) { $_.Value.info.ring } else { 'unknown' }
+      Write-CleanLine (" - id={0}; build={1}; ring={2}; title={3}" -f $_.Value.uuid, $_.Value.build, $ring, $_.Value.title)
     }
-  | Select-Object -First 1
-  | ForEach-Object {
+  } else {
+    Write-CleanLine "No UUP candidates matched preliminary filters for $name."
+  }
+
+  $candidateBuilds |
+  Sort-Object -Property @{ Expression = { Get-UupBuildSortKey $_.Value.build }; Descending = $true } |
+  Select-Object -First 1 |
+  ForEach-Object {
       $id = $_.Value.uuid
       [PSCustomObject]@{
         name               = $name
         title              = $_.Value.title
         build              = $_.Value.build
+        ring               = $_.Value.info.ring
         id                 = $id
         edition            = $target.edition
         virtualEdition     = $target['virtualEdition']
@@ -335,15 +380,21 @@ function Get-WindowsIso($name, $destinationDirectory) {
   $iso = Get-UupDumpIso $name $TARGETS.$name
   if (-not $iso) { throw "Can't find UUP for $name ($($TARGETS.$name.search)), lang=$lang." }
 
+  $selectedRing = if ($iso.PSObject.Properties.Name -contains 'ring' -and $iso.ring) { "$($iso.ring)".ToUpper() } else { 'UNKNOWN' }
+  $selectedInfo = "id=$($iso.id); build=$($iso.build); ring=$selectedRing; title=$($iso.title)"
+  Write-CleanLine "Selected UUP candidate: $selectedInfo"
+
   $isoHasEdition    = $iso.PSObject.Properties.Name -contains 'edition' -and $iso.edition
   $hasVirtualMember = $iso.PSObject.Properties.Name -contains 'virtualEdition' -and $iso.virtualEdition
   $effectiveEdition = if ($isoHasEdition) { $iso.edition } else { $TARGETS.$name.edition }
 
   if (!$preview) {
-    if (-not ($iso.title -match 'version')) { throw "Unexpected title format: missing 'version'" }
-    $parts = $iso.title -split 'version\s*'
-    if ($parts.Count -lt 2) { throw "Unexpected title format, split resulted in less than 2 parts: $($parts -join '|')" }
-    $verbuild = $parts[1] -split '[\s\(]' | Select-Object -First 1
+    if ($iso.title -match '(?i)version\s*([0-9A-Za-z\.\-]+)') {
+      $verbuild = $matches[1]
+    } else {
+      $verbuild = "$($iso.build)"
+      Write-CleanLine "WARN: Could not parse version from title. Falling back to build: $verbuild"
+    }
   } else {
     $verbuild = $ringLower.ToUpper()
   }

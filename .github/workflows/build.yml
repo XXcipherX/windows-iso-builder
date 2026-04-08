@@ -294,10 +294,11 @@ jobs:
             exit 1
           }
 
-          # Replace the original ISO with the optimized one
+          # Replace the original ISO only after the Tiny11 ISO is safely moved in place
           $originalIso = $env:ISO_PATH
-          if (Test-Path $originalIso) {
-            Remove-Item -Path $originalIso -Force
+          if (-not $originalIso -or -not (Test-Path $originalIso)) {
+            Write-Error "Original ISO path is missing or not found: $originalIso"
+            exit 1
           }
 
           $destinationDir = Split-Path $originalIso -Parent
@@ -307,10 +308,32 @@ jobs:
           } else {
             $isoName = $baseName + "_Tiny11.iso"
           }
-          Move-Item -Path $tiny11Iso -Destination "$destinationDir\$isoName" -Force
+          $newIsoPath = "$destinationDir\$isoName"
+          $tempIsoPath = "$newIsoPath.tmp"
+
+          if (Test-Path $tempIsoPath) {
+            Remove-Item -Path $tempIsoPath -Force
+          }
+          Move-Item -Path $tiny11Iso -Destination $tempIsoPath -Force
+          if (-not (Test-Path $tempIsoPath)) {
+            Write-Error "Temporary Tiny11 ISO move failed: $tempIsoPath"
+            exit 1
+          }
+
+          if (Test-Path $newIsoPath) {
+            Remove-Item -Path $newIsoPath -Force
+          }
+          Move-Item -Path $tempIsoPath -Destination $newIsoPath -Force
+          if (-not (Test-Path $newIsoPath)) {
+            Write-Error "Final Tiny11 ISO move failed: $newIsoPath"
+            exit 1
+          }
+
+          if (Test-Path $originalIso) {
+            Remove-Item -Path $originalIso -Force
+          }
 
           # Recalculate checksum for the optimized ISO
-          $newIsoPath = "$destinationDir\$isoName"
           Write-Output "Recalculating checksum for optimized ISO..."
           $newChecksum = (Get-FileHash -Algorithm SHA256 $newIsoPath).Hash.ToLowerInvariant()
           Set-Content -Encoding ascii -NoNewline -Path "$newIsoPath.sha256.txt" -Value $newChecksum

@@ -89,6 +89,34 @@ function Write-Log {
     Add-Content -Path $logFile -Value $logMessage -ErrorAction SilentlyContinue
 }
 
+function Invoke-NativeChecked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+
+        [string[]]$Arguments = @(),
+
+        [string]$Action = $FilePath,
+
+        [switch]$IgnoreExitCode
+    )
+
+    $output = & $FilePath @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+    if (-not $IgnoreExitCode -and $exitCode -ne 0) {
+        $details = ($output | Out-String).Trim()
+        if ($details) {
+            Write-Log "$Action failed (exit code $exitCode). Output: $details" "ERROR"
+        }
+        else {
+            Write-Log "$Action failed (exit code $exitCode)." "ERROR"
+        }
+        throw "$Action failed (exit code $exitCode)"
+    }
+
+    return $output
+}
+
 function Set-RegistryValue {
     param (
         [string]$path,
@@ -208,12 +236,19 @@ function Convert-ESDToWIM {
 
 function Copy-WindowsFiles {
     Write-Log "Copying Windows installation files from $DriveLetter..."
-    Copy-Item -Path "$DriveLetter\*" -Destination $tiny11Dir -Recurse -Force -ErrorAction SilentlyContinue
+    Copy-Item -Path "$DriveLetter\*" -Destination $tiny11Dir -Recurse -Force
     
     # Remove read-only attribute and delete install.esd if present
     if (Test-Path "$tiny11Dir\sources\install.esd") {
         Set-ItemProperty -Path "$tiny11Dir\sources\install.esd" -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
         Remove-Item "$tiny11Dir\sources\install.esd" -Force -ErrorAction SilentlyContinue
+    }
+
+    if (-not (Test-Path "$tiny11Dir\sources\boot.wim")) {
+        throw "Copied source is invalid: missing $tiny11Dir\sources\boot.wim"
+    }
+    if (-not (Test-Path "$tiny11Dir\sources\install.wim")) {
+        throw "Copied source is invalid: missing $tiny11Dir\sources\install.wim"
     }
     
     Write-Log "File copy complete"
@@ -355,7 +390,12 @@ function Remove-BloatwareApps {
     $removeCount = 0
     foreach ($package in $packagesToRemove) {
         Write-Log "Removing: $package"
-        & dism /English "/image:$scratchDir" /Remove-ProvisionedAppxPackage "/PackageName:$package" | Out-Null
+        Invoke-NativeChecked -FilePath 'dism' -Arguments @(
+            '/English',
+            "/image:$scratchDir",
+            '/Remove-ProvisionedAppxPackage',
+            "/PackageName:$package"
+        ) -Action "Remove provisioned appx package $package" | Out-Null
         $removeCount++
     }
     
@@ -397,11 +437,11 @@ function Remove-EdgeAndOneDrive {
 function Set-RegistryTweaks {
     Write-Log "Loading registry hives..."
     
-    reg load HKLM\zCOMPONENTS "$scratchDir\Windows\System32\config\COMPONENTS" | Out-Null
-    reg load HKLM\zDEFAULT "$scratchDir\Windows\System32\config\default" | Out-Null
-    reg load HKLM\zNTUSER "$scratchDir\Users\Default\ntuser.dat" | Out-Null
-    reg load HKLM\zSOFTWARE "$scratchDir\Windows\System32\config\SOFTWARE" | Out-Null
-    reg load HKLM\zSYSTEM "$scratchDir\Windows\System32\config\SYSTEM" | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zCOMPONENTS', "$scratchDir\Windows\System32\config\COMPONENTS") -Action 'Load COMPONENTS hive' | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zDEFAULT', "$scratchDir\Windows\System32\config\default") -Action 'Load DEFAULT hive' | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zNTUSER', "$scratchDir\Users\Default\ntuser.dat") -Action 'Load NTUSER hive' | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSOFTWARE', "$scratchDir\Windows\System32\config\SOFTWARE") -Action 'Load SOFTWARE hive' | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSYSTEM', "$scratchDir\Windows\System32\config\SYSTEM") -Action 'Load SYSTEM hive' | Out-Null
     
     Write-Log "Applying registry tweaks..."
     
@@ -566,13 +606,28 @@ function Remove-NonEssentialServices {
 }
 
 function Dismount-RegistryHives {
+    param(
+        [switch]$BestEffort
+    )
+
     Write-Log "Unloading registry hives..."
-    
-    reg unload HKLM\zCOMPONENTS | Out-Null
-    reg unload HKLM\zDEFAULT | Out-Null
-    reg unload HKLM\zNTUSER | Out-Null
-    reg unload HKLM\zSOFTWARE | Out-Null
-    reg unload HKLM\zSYSTEM | Out-Null
+
+    $hives = @(
+        'HKLM\zCOMPONENTS',
+        'HKLM\zDEFAULT',
+        'HKLM\zNTUSER',
+        'HKLM\zSOFTWARE',
+        'HKLM\zSYSTEM'
+    )
+
+    foreach ($hive in $hives) {
+        if ($BestEffort) {
+            Invoke-NativeChecked -FilePath 'reg' -Arguments @('unload', $hive) -Action "Unload $hive" -IgnoreExitCode | Out-Null
+        }
+        else {
+            Invoke-NativeChecked -FilePath 'reg' -Arguments @('unload', $hive) -Action "Unload $hive" | Out-Null
+        }
+    }
     
     Write-Log "Registry hives unloaded"
 }
@@ -633,11 +688,11 @@ function Invoke-BootImageProcessing {
     Mount-WindowsImage -ImagePath $bootWimPath -Index 2 -Path $scratchDir
     
     Write-Log "Loading boot image registry..."
-    reg load HKLM\zCOMPONENTS "$scratchDir\Windows\System32\config\COMPONENTS" | Out-Null
-    reg load HKLM\zDEFAULT "$scratchDir\Windows\System32\config\default" | Out-Null
-    reg load HKLM\zNTUSER "$scratchDir\Users\Default\ntuser.dat" | Out-Null
-    reg load HKLM\zSOFTWARE "$scratchDir\Windows\System32\config\SOFTWARE" | Out-Null
-    reg load HKLM\zSYSTEM "$scratchDir\Windows\System32\config\SYSTEM" | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zCOMPONENTS', "$scratchDir\Windows\System32\config\COMPONENTS") -Action 'Load boot COMPONENTS hive' | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zDEFAULT', "$scratchDir\Windows\System32\config\default") -Action 'Load boot DEFAULT hive' | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zNTUSER', "$scratchDir\Users\Default\ntuser.dat") -Action 'Load boot NTUSER hive' | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSOFTWARE', "$scratchDir\Windows\System32\config\SOFTWARE") -Action 'Load boot SOFTWARE hive' | Out-Null
+    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSYSTEM', "$scratchDir\Windows\System32\config\SYSTEM") -Action 'Load boot SYSTEM hive' | Out-Null
     
     Write-Log "Applying system requirement bypasses to boot image..."
     Set-RegistryValue 'HKLM\zDEFAULT\Control Panel\UnsupportedHardwareNotificationCache' 'SV1' 'REG_DWORD' '0'
@@ -690,9 +745,15 @@ function New-TinyISO {
     }
     
     Write-Log "Building bootable ISO (this may take 5-10 minutes)..."
-    & $OSCDIMG '-m' '-o' '-u2' '-udfver102' `
-        "-bootdata:2#p0,e,b$tiny11Dir\boot\etfsboot.com#pEF,e,b$tiny11Dir\efi\microsoft\boot\efisys.bin" `
-        $tiny11Dir $outputISO | Out-Null
+    Invoke-NativeChecked -FilePath $OSCDIMG -Arguments @(
+        '-m',
+        '-o',
+        '-u2',
+        '-udfver102',
+        "-bootdata:2#p0,e,b$tiny11Dir\boot\etfsboot.com#pEF,e,b$tiny11Dir\efi\microsoft\boot\efisys.bin",
+        $tiny11Dir,
+        $outputISO
+    ) -Action 'Build bootable ISO with oscdimg' | Out-Null
     
     if (Test-Path $outputISO) {
         $isoSize = [math]::Round((Get-Item $outputISO).Length / 1GB, 2)
@@ -823,9 +884,12 @@ catch {
     
     # Emergency cleanup
     try {
-        Get-WindowsImage -Mounted | ForEach-Object {
-            Write-Log "Emergency dismount: $($_.Path)" "WARN"
-            Dismount-WindowsImage -Path $_.Path -Discard -ErrorAction SilentlyContinue
+        $mountedHere = Get-WindowsImage -Mounted -ErrorAction SilentlyContinue | Where-Object {
+            $_.Path -and ($_.Path -ieq $scratchDir)
+        }
+        if ($mountedHere) {
+            Write-Log "Emergency dismount (current scratch path): $scratchDir" "WARN"
+            Dismount-WindowsImage -Path $scratchDir -Discard -ErrorAction SilentlyContinue
         }
         
         # Dismount auto-mounted ISO
@@ -834,7 +898,7 @@ catch {
             Dismount-DiskImage -ImagePath $script:AutoMountedISO -ErrorAction SilentlyContinue
         }
         
-        try { Dismount-RegistryHives } catch { }
+        try { Dismount-RegistryHives -BestEffort } catch { }
     }
     catch {
         Write-Log "Emergency cleanup failed: $_" "ERROR"
