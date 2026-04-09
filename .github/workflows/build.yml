@@ -332,6 +332,9 @@ jobs:
           if (Test-Path $originalIso) {
             Remove-Item -Path $originalIso -Force
           }
+          if (Test-Path "$originalIso.sha256.txt") {
+            Remove-Item -Path "$originalIso.sha256.txt" -Force
+          }
 
           # Recalculate checksum for the optimized ISO
           Write-Output "Recalculating checksum for optimized ISO..."

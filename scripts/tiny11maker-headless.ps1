@@ -634,10 +634,9 @@ function Dismount-RegistryHives {
 
 function Optimize-WindowsImage {
     Write-Log "Cleaning up Windows image (this may take 10-15 minutes)..."
-    & dism.exe /Image:$scratchDir /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "DISM cleanup failed with exit code $LASTEXITCODE"
-    }
+    Invoke-NativeChecked -FilePath 'dism.exe' -Arguments @(
+        "/Image:$scratchDir", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase'
+    ) -Action 'DISM image cleanup' | Out-Null
     Write-Log "Image cleanup complete"
 }
 
@@ -648,11 +647,10 @@ function Dismount-AndExport {
     if ($ESD) {
         Write-Log "Exporting image as ESD with maximum compression (this may take 15-20 minutes)..."
         $tempImg = "$tiny11Dir\sources\install.esd"
-        & Dism.exe /Export-Image /SourceImageFile:$wimFilePath /SourceIndex:$INDEX `
-            /DestinationImageFile:$tempImg /Compress:recovery | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "DISM ESD export failed with exit code $LASTEXITCODE"
-        }
+        Invoke-NativeChecked -FilePath 'Dism.exe' -Arguments @(
+            '/Export-Image', "/SourceImageFile:$wimFilePath", "/SourceIndex:$INDEX",
+            "/DestinationImageFile:$tempImg", '/Compress:recovery'
+        ) -Action 'DISM ESD export' | Out-Null
         
         Remove-Item -Path $wimFilePath -Force
         Write-Log "Install.esd export complete"
@@ -660,11 +658,10 @@ function Dismount-AndExport {
     else {
         Write-Log "Exporting image as WIM with maximum compression (this may take 1-2 minutes)..."
         $tempImg = "$tiny11Dir\sources\install2.wim"
-        & Dism.exe /Export-Image /SourceImageFile:$wimFilePath /SourceIndex:$INDEX `
-            /DestinationImageFile:$tempImg /Compress:max | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "DISM WIM export failed with exit code $LASTEXITCODE"
-        }
+        Invoke-NativeChecked -FilePath 'Dism.exe' -Arguments @(
+            '/Export-Image', "/SourceImageFile:$wimFilePath", "/SourceIndex:$INDEX",
+            "/DestinationImageFile:$tempImg", '/Compress:max'
+        ) -Action 'DISM WIM export' | Out-Null
         
         Remove-Item -Path $wimFilePath -Force
         Rename-Item -Path $tempImg -NewName "install.wim"

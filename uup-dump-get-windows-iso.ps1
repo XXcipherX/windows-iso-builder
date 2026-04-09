@@ -151,6 +151,7 @@ function Get-UupBuildSortKey($build) {
   try {
     return [version]([string]$build)
   } catch {
+    Write-CleanLine "WARN: Cannot parse build '$build' as version, treating as 0.0"
     return [version]'0.0'
   }
 }
