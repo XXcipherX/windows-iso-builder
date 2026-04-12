@@ -143,8 +143,40 @@ function Set-RegistryValue {
     }
 }
 
+function Convert-RegistryPathToProviderPath {
+    param([string]$path)
+
+    if ($path -match '^HKLM\\(.+)$') {
+        return "Registry::HKEY_LOCAL_MACHINE\$($Matches[1])"
+    }
+
+    if ($path -match '^HKCU\\(.+)$') {
+        return "Registry::HKEY_CURRENT_USER\$($Matches[1])"
+    }
+
+    return $null
+}
+
 function Remove-RegistryValue {
     param([string]$path)
+
+    $providerPath = Convert-RegistryPathToProviderPath $path
+    if ($providerPath) {
+        try {
+            if (-not (Test-Path -LiteralPath $providerPath)) {
+                return
+            }
+
+            Remove-Item -LiteralPath $providerPath -Recurse -Force -ErrorAction Stop
+            Write-Log "Removed registry: $path"
+            return
+        }
+        catch {
+            Write-Log "Registry not removed: $path. $_" "WARN"
+            return
+        }
+    }
+
     try {
         $commandOutput = (& 'reg' 'delete' $path '/f' 2>&1 | Out-String).Trim()
         $exitCode = $LASTEXITCODE
@@ -155,7 +187,7 @@ function Remove-RegistryValue {
         else {
             $details = if ($commandOutput) { " Output: $commandOutput" } else { "" }
             if ($commandOutput -match 'unable to find the specified registry key or value') {
-                Write-Log "Registry key already absent: $path (exit code $exitCode).$details" "INFO"
+                return
             }
             else {
                 Write-Log "Registry not removed: $path (exit code $exitCode).$details" "WARN"
@@ -165,6 +197,52 @@ function Remove-RegistryValue {
     catch {
         Write-Log "Error removing registry $path : $_" "WARN"
     }
+}
+
+function Remove-PathQuietly {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [string]$Description = $Path,
+
+        [switch]$Recurse
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $true
+    }
+
+    Remove-Item -LiteralPath $Path -Recurse:$Recurse.IsPresent -Force -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $true
+    }
+
+    try {
+        $adminSID = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544")
+        $adminAccount = $adminSID.Translate([System.Security.Principal.NTAccount]).Value
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+
+        if ($item -and $item.PSIsContainer) {
+            & takeown /F $Path /A /R /D Y *> $null
+            & icacls $Path /grant "${adminAccount}:(F)" /T /C /Q *> $null
+        }
+        else {
+            & takeown /F $Path /A *> $null
+            & icacls $Path /grant "${adminAccount}:(F)" /C /Q *> $null
+        }
+    }
+    catch {
+        Write-Log "Could not reset permissions for $Description : $_" "WARN"
+    }
+
+    Remove-Item -LiteralPath $Path -Recurse:$Recurse.IsPresent -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $Path) {
+        Write-Log "Cleanup incomplete for $Description; some protected files remain." "WARN"
+        return $false
+    }
+
+    return $true
 }
 
 function Test-Prerequisites {
@@ -509,6 +587,8 @@ function Set-RegistryTweaks {
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Dsh' 'AllowNewsAndInterests' 'REG_DWORD' '0'
     
     # Remove Edge registries
+    Remove-RegistryValue "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge"
+    Remove-RegistryValue "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Update"
     Remove-RegistryValue "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge"
     Remove-RegistryValue "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Update"
     
@@ -770,11 +850,11 @@ function Invoke-Cleanup {
     Write-Log "Performing cleanup..."
     
     # Remove temporary directories
-    Remove-Item -Path $tiny11Dir -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path $scratchDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-PathQuietly -Path $tiny11Dir -Description "tiny11 folder" -Recurse | Out-Null
+    Remove-PathQuietly -Path $scratchDir -Description "scratchdir folder" -Recurse | Out-Null
     
     # Remove downloaded files
-    Remove-Item -Path "$PSScriptRoot\oscdimg.exe" -Force -ErrorAction SilentlyContinue
+    Remove-PathQuietly -Path "$PSScriptRoot\oscdimg.exe" -Description "downloaded oscdimg.exe" | Out-Null
     # Note: autounattend.xml is a tracked repo file — do NOT delete from PSScriptRoot
     
     # Dismount auto-mounted ISO if applicable
