@@ -33,10 +33,10 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 
 | Input | Options | Default |
 |-------|---------|---------|
-| **Version** | Windows 10 22H2, 11 23H2/24H2/25H2/26H1, DEV, CANARY | Windows 11 25H2 |
+| **Version** | Windows 10 22H2, Windows 11 23H2/24H2/24H2 BETA/25H2/25H2 BETA/26H1, DEV, CANARY | Windows 11 25H2 |
 | **Architecture** | x64, arm64 | x64 |
 | **Edition** | Pro, Home, Multi | Pro |
-| **Language** | 37 languages (ar-sa → zh-tw) | English (United States) |
+| **Language** | 38 languages (ar-sa → zh-tw) | English (United States) |
 | **Revision** | Optional build revision number | — |
 
 ### Build Options
@@ -98,14 +98,31 @@ pwsh uup-dump-get-windows-iso.ps1 windows-11new c:/output -architecture x64 -edi
 
 ---
 
+## 🤖 Agent Documentation
+
+Agent-facing documentation is available in [`AGENTS.md`](AGENTS.md) and [`.agents/`](.agents/):
+
+- [`.agents/README.md`](.agents/README.md) — overview and operating rules
+- [`.agents/repository-map.md`](.agents/repository-map.md) — file responsibilities and generated artifacts
+- [`.agents/workflow.md`](.agents/workflow.md) — GitHub Actions pipeline notes
+- [`.agents/local-runbook.md`](.agents/local-runbook.md) — local commands, validation, and safety notes
+
+---
+
 ## 📁 Repository Structure
 
 ```
 windows-iso-builder/
+├── .agents/
+│   ├── README.md                   # Agent docs entry point
+│   ├── local-runbook.md            # Local validation and safety notes
+│   ├── repository-map.md           # File ownership map
+│   └── workflow.md                 # GitHub Actions pipeline notes
 ├── .github/workflows/
 │   └── build.yml                    # Unified CI/CD workflow
 ├── scripts/
 │   └── tiny11maker-headless.ps1     # Tiny11 optimizer
+├── AGENTS.md                        # Root pointer for IDE/CLI agents
 ├── uup-dump-get-windows-iso.ps1     # UUP dump ISO builder
 ├── CustomAppsList.txt               # UUP dump app selection
 ├── autounattend.xml                 # OOBE bypass & post-install
