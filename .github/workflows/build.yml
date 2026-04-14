@@ -202,7 +202,6 @@ jobs:
          Remove-Item -Recurse -Force "C:\Program Files\Microsoft Visual Studio" -ErrorAction SilentlyContinue
          Remove-Item -Recurse -Force "C:\Program Files (x86)\Microsoft Visual Studio" -ErrorAction SilentlyContinue
          Remove-Item -Recurse -Force "C:\Program Files\Android" -ErrorAction SilentlyContinue
-         Remove-Item -Recurse -Force "C:\ProgramData\chocolatey\lib" -ErrorAction SilentlyContinue
          Remove-Item -Recurse -Force "$env:TEMP\*" -ErrorAction SilentlyContinue
          Remove-Item -Recurse -Force "C:\Windows\Temp\*" -ErrorAction SilentlyContinue
 
