@@ -620,30 +620,54 @@ function Remove-ScheduledTasks {
     
     $tasksPath = "$scratchDir\Windows\System32\Tasks"
     $tasksToRemove = @(
+        # Appraiser/CEIP tasks vary by Windows 11 build; keep legacy names as best-effort.
         "$tasksPath\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser",
-        "$tasksPath\Microsoft\Windows\Customer Experience Improvement Program",
+        "$tasksPath\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser Exp",
         "$tasksPath\Microsoft\Windows\Application Experience\ProgramDataUpdater",
+        "$tasksPath\Microsoft\Windows\Application Experience\MareBackup",
+        "$tasksPath\Microsoft\Windows\Customer Experience Improvement Program\Consolidator",
+        "$tasksPath\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip",
         "$tasksPath\Microsoft\Windows\Chkdsk\Proxy",
         "$tasksPath\Microsoft\Windows\Windows Error Reporting\QueueReporting"
     )
 
     $removedCount = 0
+    $missingCount = 0
     $incompleteCount = 0
+    $removedTasks = @()
+    $missingTasks = @()
+    $incompleteTasks = @()
     
     foreach ($task in $tasksToRemove) {
-        if (Test-Path -LiteralPath $task) {
-            if (Remove-PathQuietly -Path $task -Description "Scheduled task: $task" -Recurse) {
-                Write-Log "Removed task: $task"
+        $taskLabel = $task.Substring($tasksPath.Length + 1)
+        if (Test-Path -LiteralPath $task -PathType Leaf) {
+            if (Remove-PathQuietly -Path $task -Description "Scheduled task: $task") {
+                Write-Log "Removed task: $taskLabel"
                 $removedCount++
+                $removedTasks += $taskLabel
             }
             else {
-                Write-Log "Could not fully remove task: $task" "WARN"
+                Write-Log "Could not fully remove task: $taskLabel" "WARN"
                 $incompleteCount++
+                $incompleteTasks += $taskLabel
             }
+        }
+        else {
+            $missingCount++
+            $missingTasks += $taskLabel
         }
     }
     
-    Write-Log "Scheduled tasks cleanup complete (removed: $removedCount, incomplete: $incompleteCount)"
+    Write-Log "Scheduled tasks cleanup complete (removed: $removedCount, missing: $missingCount, incomplete: $incompleteCount)"
+    if ($removedTasks.Count -gt 0) {
+        Write-Log "Removed scheduled tasks: $($removedTasks -join '; ')"
+    }
+    if ($missingTasks.Count -gt 0) {
+        Write-Log "Missing scheduled tasks: $($missingTasks -join '; ')"
+    }
+    if ($incompleteTasks.Count -gt 0) {
+        Write-Log "Incomplete scheduled tasks: $($incompleteTasks -join '; ')" "WARN"
+    }
 }
 
 function Remove-NonEssentialServices {
