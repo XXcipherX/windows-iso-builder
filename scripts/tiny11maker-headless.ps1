@@ -143,39 +143,8 @@ function Set-RegistryValue {
     }
 }
 
-function Convert-RegistryPathToProviderPath {
-    param([string]$path)
-
-    if ($path -match '^HKLM\\(.+)$') {
-        return "Registry::HKEY_LOCAL_MACHINE\$($Matches[1])"
-    }
-
-    if ($path -match '^HKCU\\(.+)$') {
-        return "Registry::HKEY_CURRENT_USER\$($Matches[1])"
-    }
-
-    return $null
-}
-
 function Remove-RegistryValue {
     param([string]$path)
-
-    $providerPath = Convert-RegistryPathToProviderPath $path
-    if ($providerPath) {
-        try {
-            if (-not (Test-Path -LiteralPath $providerPath)) {
-                return
-            }
-
-            Remove-Item -LiteralPath $providerPath -Recurse -Force -ErrorAction Stop
-            Write-Log "Removed registry: $path"
-            return
-        }
-        catch {
-            Write-Log "Registry not removed: $path. $_" "WARN"
-            return
-        }
-    }
 
     try {
         $commandOutput = (& 'reg' 'delete' $path '/f' 2>&1 | Out-String).Trim()
@@ -722,7 +691,26 @@ function Dismount-RegistryHives {
             Invoke-NativeChecked -FilePath 'reg' -Arguments @('unload', $hive) -Action "Unload $hive" -IgnoreExitCode | Out-Null
         }
         else {
-            Invoke-NativeChecked -FilePath 'reg' -Arguments @('unload', $hive) -Action "Unload $hive" | Out-Null
+            $maxAttempts = 3
+            $unloaded = $false
+
+            for ($attempt = 1; $attempt -le $maxAttempts -and -not $unloaded; $attempt++) {
+                try {
+                    Invoke-NativeChecked -FilePath 'reg' -Arguments @('unload', $hive) -Action "Unload $hive" | Out-Null
+                    $unloaded = $true
+                }
+                catch {
+                    if ($attempt -lt $maxAttempts) {
+                        Write-Log "Unload $hive failed on attempt $attempt/$maxAttempts. Retrying..." "WARN"
+                        [System.GC]::Collect()
+                        [System.GC]::WaitForPendingFinalizers()
+                        Start-Sleep -Seconds 2
+                    }
+                    else {
+                        throw
+                    }
+                }
+            }
         }
     }
     
