@@ -248,6 +248,7 @@ jobs:
           # If Tiny11 is enabled, skip UUP dump ESD compression (Tiny11 re-compresses it anyway)
           if ('${{ steps.map.outputs.uup_esd }}' -eq 'true') { $splat.esd = $true }
           if ('${{ inputs.netfx3 }}' -eq 'true') { $splat.netfx3 = $true }
+          if ('${{ inputs.tiny11 }}' -eq 'true') { $splat.SkipChecksum = $true }
 
           if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
             $splat.revision = '${{ inputs.revision }}'

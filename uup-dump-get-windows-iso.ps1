@@ -9,7 +9,8 @@ param(
   [string]$lang = "en-us",
   [switch]$esd,
   [switch]$netfx3,
-  [string]$revision
+  [string]$revision,
+  [switch]$SkipChecksum
 )
 
 Set-StrictMode -Version Latest
@@ -409,7 +410,6 @@ function Get-WindowsIso($name, $destinationDirectory) {
   $buildDirectory               = "$destinationDirectory/$name"
   $destinationIsoPath           = "$buildDirectory.iso"
   $destinationIsoMetadataPath   = "$destinationIsoPath.json"
-  $destinationIsoChecksumPath   = "$destinationIsoPath.sha256.txt"
 
   if (Test-Path $buildDirectory) { Remove-Item -Force -Recurse $buildDirectory | Out-Null }
   New-Item -ItemType Directory -Force $buildDirectory | Out-Null
@@ -493,9 +493,13 @@ function Get-WindowsIso($name, $destinationDirectory) {
   $sourceIsoPath = $isoFiles[0]
   $IsoName = Split-Path $sourceIsoPath -leaf
 
-  Write-CleanLine "Getting the $sourceIsoPath checksum"
-  $isoChecksum = (Get-FileHash -Algorithm SHA256 $sourceIsoPath).Hash.ToLowerInvariant()
-  Set-Content -Encoding ascii -NoNewline -Path $destinationIsoChecksumPath -Value $isoChecksum
+  $isoChecksum = $null
+  if ($SkipChecksum) {
+    Write-CleanLine "Skipping checksum for intermediate ISO; the final ISO checksum will be calculated later."
+  } else {
+    Write-CleanLine "Getting the $sourceIsoPath checksum"
+    $isoChecksum = (Get-FileHash -Algorithm SHA256 $sourceIsoPath).Hash.ToLowerInvariant()
+  }
 
   $windowsImages = Get-IsoWindowsImages $sourceIsoPath
   Set-Content -Path $destinationIsoMetadataPath -Value (
@@ -519,10 +523,16 @@ function Get-WindowsIso($name, $destinationDirectory) {
   Write-CleanLine "Moving the created $sourceIsoPath to $destinationDirectory/$IsoName"
   Move-Item -Force $sourceIsoPath "$destinationDirectory/$IsoName"
 
+  $fullIsoPath = (Resolve-Path "$destinationDirectory/$IsoName").Path
+  if ($SkipChecksum) {
+    Remove-Item -LiteralPath "$fullIsoPath.sha256.txt" -Force -ErrorAction SilentlyContinue
+  } else {
+    Set-Content -Encoding ascii -NoNewline -LiteralPath "$fullIsoPath.sha256.txt" -Value $isoChecksum
+  }
+
   Write-CleanLine "Cleaning up build directory to save space..."
   Remove-Item -Force -Recurse $buildDirectory -ErrorAction SilentlyContinue
 
-  $fullIsoPath = (Resolve-Path "$destinationDirectory/$IsoName").Path
   if ($env:GITHUB_ENV) {
     Write-Output "ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     Write-Output "ISO_PATH=$fullIsoPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
