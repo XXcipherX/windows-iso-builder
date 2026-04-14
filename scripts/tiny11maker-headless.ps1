@@ -495,7 +495,7 @@ function Remove-EdgeAndOneDrive {
         "$scratchDir\Program Files (x86)\Microsoft\Edge",
         "$scratchDir\Program Files (x86)\Microsoft\EdgeUpdate",
         "$scratchDir\Program Files (x86)\Microsoft\EdgeCore",
-        "$scratchDir\Windows\System32\Microsoft-Edge-Webview"
+        "$scratchDir\Program Files (x86)\Microsoft\EdgeWebView"
     )
     
     foreach ($path in $edgePaths) {
@@ -1005,6 +1005,9 @@ catch {
     
     # Emergency cleanup
     try {
+        # Unload offline hives first to release locks on SOFTWARE/SYSTEM files.
+        try { Dismount-RegistryHives -BestEffort } catch { }
+
         $mountedHere = Get-WindowsImage -Mounted -ErrorAction SilentlyContinue | Where-Object {
             $_.Path -and ($_.Path -ieq $scratchDir)
         }
@@ -1018,8 +1021,6 @@ catch {
             Write-Log "Emergency dismount ISO: $($script:AutoMountedISO)" "WARN"
             Dismount-DiskImage -ImagePath $script:AutoMountedISO -ErrorAction SilentlyContinue
         }
-        
-        try { Dismount-RegistryHives -BestEffort } catch { }
     }
     catch {
         Write-Log "Emergency cleanup failed: $_" "ERROR"
