@@ -365,12 +365,16 @@ function Get-ImageMetadata {
 function Remove-BloatwareApps {
     Write-Log "Removing provisioned appx packages..."
     
-    $packages = & dism /English "/image:$scratchDir" /Get-ProvisionedAppxPackages |
-    ForEach-Object {
-        if ($_ -match 'PackageName : (.*)') {
-            $matches[1].Trim()
-        }
-    }
+    $packages = @(
+        & dism /English "/image:$scratchDir" /Get-ProvisionedAppxPackages |
+        ForEach-Object {
+            if ($_ -match 'PackageName : (.*)') {
+                $matches[1].Trim()
+            }
+        } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Sort-Object -Unique
+    )
     
     $packagePrefixes = @(
         'AppUp.IntelManagementandSecurityStatus',
@@ -431,13 +435,25 @@ function Remove-BloatwareApps {
         'Microsoft.Recall'
     )
     
-    $packagesToRemove = $packages | Where-Object {
-        $packageName = $_
-        $packagePrefixes | Where-Object { $packageName -like "*$_*" }
-    }
+    $packagesToRemove = @(
+        $packages | Where-Object {
+            $packageName = $_
+            $packagePrefixes | Where-Object { $packageName -like "*$_*" }
+        }
+    )
     
     $removeCount = 0
     $failCount = 0
+    $failedPackages = @()
+
+    Write-Log "Provisioned Appx scan: discovered=$($packages.Count), matched=$($packagesToRemove.Count)"
+    if ($packages.Count -eq 0) {
+        Write-Log "No provisioned package names were parsed from DISM output. This may indicate image format/output differences." "WARN"
+    }
+    elseif ($packagesToRemove.Count -eq 0) {
+        Write-Log "No provisioned packages matched the bloatware filter list." "WARN"
+    }
+
     foreach ($package in $packagesToRemove) {
         Write-Log "Removing: $package"
         try {
@@ -451,10 +467,14 @@ function Remove-BloatwareApps {
         } catch {
             Write-Log "Could not remove package ${package}: $_" "WARN"
             $failCount++
+            $failedPackages += $package
         }
     }
     
-    Write-Log "Removed $removeCount appx packages"
+    Write-Log "Provisioned Appx cleanup complete (removed: $removeCount, failed: $failCount, matched: $($packagesToRemove.Count), discovered: $($packages.Count))"
+    if ($failedPackages.Count -gt 0) {
+        Write-Log "Failed Appx removals: $($failedPackages -join '; ')" "WARN"
+    }
 }
 
 function Remove-EdgeAndOneDrive {
@@ -545,8 +565,17 @@ function Set-RegistryTweaks {
     
     # Copy autounattend.xml if exists
     if (Test-Path "$PSScriptRoot\autounattend.xml") {
-        Copy-Item -Path "$PSScriptRoot\autounattend.xml" -Destination "$scratchDir\Windows\System32\Sysprep\autounattend.xml" -Force
-        Write-Log "Copied autounattend.xml"
+        $autounattendDestination = "$scratchDir\Windows\System32\Sysprep\autounattend.xml"
+        Copy-Item -Path "$PSScriptRoot\autounattend.xml" -Destination $autounattendDestination -Force
+        if (Test-Path -LiteralPath $autounattendDestination -PathType Leaf) {
+            Write-Log "Copied autounattend.xml to Sysprep folder"
+        }
+        else {
+            Write-Log "autounattend.xml copy did not produce the expected destination file." "WARN"
+        }
+    }
+    else {
+        Write-Log "autounattend.xml not found in script directory; unattended OOBE customization will be skipped." "WARN"
     }
     
     # Disable reserved storage
@@ -682,17 +711,25 @@ function Remove-NonEssentialServices {
         'SysMain'              # Superfetch (not needed on SSDs)
     )
     
+    $disabledCount = 0
+    $failedServices = @()
+
     foreach ($service in $servicesToDisable) {
         Write-Log "Disabling service: $service"
         try {
             Set-RegistryValue "HKLM\zSYSTEM\ControlSet001\Services\$service" 'Start' 'REG_DWORD' '4'
+            $disabledCount++
         }
         catch {
             Write-Log "Could not disable service $service : $_" "WARN"
+            $failedServices += $service
         }
     }
     
-    Write-Log "Non-essential services disabled"
+    Write-Log "Non-essential services cleanup complete (disabled: $disabledCount, failed: $($failedServices.Count), total: $($servicesToDisable.Count))"
+    if ($failedServices.Count -gt 0) {
+        Write-Log "Services not disabled: $($failedServices -join '; ')" "WARN"
+    }
 }
 
 function Dismount-RegistryHives {
@@ -710,9 +747,33 @@ function Dismount-RegistryHives {
         'HKLM\zSYSTEM'
     )
 
+    $bestEffortFailed = @()
+    $bestEffortUnloaded = 0
+    $bestEffortSkipped = @()
+
     foreach ($hive in $hives) {
         if ($BestEffort) {
-            Invoke-NativeChecked -FilePath 'reg' -Arguments @('unload', $hive) -Action "Unload $hive" -IgnoreExitCode | Out-Null
+            $providerPath = if ($hive -match '^HKLM\\(.+)$') {
+                "Registry::HKEY_LOCAL_MACHINE\$($Matches[1])"
+            } else {
+                $null
+            }
+
+            if (-not $providerPath -or -not (Test-Path -LiteralPath $providerPath)) {
+                Write-Log "Best-effort unload skipped for $hive (hive not loaded)." "INFO"
+                $bestEffortSkipped += $hive
+                continue
+            }
+
+            $unloadOutput = (& reg.exe unload $hive 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0) {
+                $bestEffortUnloaded++
+            }
+            else {
+                $details = if ($unloadOutput) { " Output: $unloadOutput" } else { "" }
+                Write-Log "Best-effort unload failed for $hive.$details" "WARN"
+                $bestEffortFailed += $hive
+            }
         }
         else {
             $maxAttempts = 3
@@ -737,8 +798,19 @@ function Dismount-RegistryHives {
             }
         }
     }
-    
-    Write-Log "Registry hives unloaded"
+
+    if ($BestEffort) {
+        Write-Log "Registry hives best-effort unload complete (unloaded: $bestEffortUnloaded, skipped: $($bestEffortSkipped.Count), failed: $($bestEffortFailed.Count), total: $($hives.Count))"
+        if ($bestEffortSkipped.Count -gt 0) {
+            Write-Log "Registry hives not loaded (skipped): $($bestEffortSkipped -join '; ')"
+        }
+        if ($bestEffortFailed.Count -gt 0) {
+            Write-Log "Registry hives still loaded: $($bestEffortFailed -join '; ')" "WARN"
+        }
+    }
+    else {
+        Write-Log "Registry hives unloaded"
+    }
 }
 
 function Optimize-WindowsImage {
