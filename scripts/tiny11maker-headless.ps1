@@ -295,6 +295,7 @@ function Convert-ESDToWIM {
     
     $esdPath = "$tiny11Dir\sources\install.esd"
     $tempWimPath = "$tiny11Dir\sources\install.wim"
+    $selectedIndex = $INDEX
     
     # Remove read-only attribute from copied install.esd
     Set-ItemProperty -Path $esdPath -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
@@ -308,14 +309,16 @@ function Convert-ESDToWIM {
         throw "Image index $INDEX not found in install.esd"
     }
     
-    Write-Log "Exporting image index $INDEX from ESD (this may take 10-20 minutes)..."
-    Export-WindowsImage -SourceImagePath $esdPath -SourceIndex $INDEX `
+    Write-Log "Exporting image index $selectedIndex from ESD (this may take 10-20 minutes)..."
+    Export-WindowsImage -SourceImagePath $esdPath -SourceIndex $selectedIndex `
         -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity
     
     # Remove the source ESD after successful conversion
     Remove-Item -Path $esdPath -Force -ErrorAction SilentlyContinue
 
-    Write-Log "ESD conversion complete"
+    # The exported WIM contains only one image, so it is always index 1.
+    $script:INDEX = 1
+    Write-Log "ESD conversion complete (source index $selectedIndex exported as WIM index 1)"
 }
 
 function Copy-WindowsFiles {
@@ -396,7 +399,7 @@ function Remove-BloatwareApps {
     $packages = & dism /English "/image:$scratchDir" /Get-ProvisionedAppxPackages |
     ForEach-Object {
         if ($_ -match 'PackageName : (.*)') {
-            $matches[1]
+            $matches[1].Trim()
         }
     }
     
@@ -654,15 +657,24 @@ function Remove-ScheduledTasks {
         "$tasksPath\Microsoft\Windows\Chkdsk\Proxy",
         "$tasksPath\Microsoft\Windows\Windows Error Reporting\QueueReporting"
     )
+
+    $removedCount = 0
+    $incompleteCount = 0
     
     foreach ($task in $tasksToRemove) {
-        if (Test-Path $task) {
-            Remove-Item -Path $task -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Log "Removed task: $task"
+        if (Test-Path -LiteralPath $task) {
+            if (Remove-PathQuietly -Path $task -Description "Scheduled task: $task" -Recurse) {
+                Write-Log "Removed task: $task"
+                $removedCount++
+            }
+            else {
+                Write-Log "Could not fully remove task: $task" "WARN"
+                $incompleteCount++
+            }
         }
     }
     
-    Write-Log "Scheduled tasks removed"
+    Write-Log "Scheduled tasks cleanup complete (removed: $removedCount, incomplete: $incompleteCount)"
 }
 
 function Remove-NonEssentialServices {
