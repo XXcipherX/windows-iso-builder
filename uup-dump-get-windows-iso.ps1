@@ -427,8 +427,6 @@ function Get-WindowsIso($name, $destinationDirectory) {
   $rawLogDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
   $rawLog = Join-Path $rawLogDir "uup_dism_aria2_raw.log"
 
-  choco install aria2 /y *> $null
-
   & {
     powershell cmd /c uup_download_windows.cmd 2>&1 |
       Tee-Object -FilePath $rawLog |
