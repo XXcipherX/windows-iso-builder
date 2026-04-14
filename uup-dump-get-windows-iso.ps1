@@ -325,7 +325,13 @@ function Get-IsoWindowsImages($isoPath) {
       throw "Mounted ISO has no accessible drive letter: $isoPath"
     }
 
-    $installPath = if ($esd) { "${driveLetter}:\sources\install.esd" } else { "${driveLetter}:\sources\install.wim" }
+    $installPath = if (Test-Path "${driveLetter}:\sources\install.wim") {
+      "${driveLetter}:\sources\install.wim"
+    } elseif (Test-Path "${driveLetter}:\sources\install.esd") {
+      "${driveLetter}:\sources\install.esd"
+    } else {
+      throw "No install.wim or install.esd found at ${driveLetter}:\sources\"
+    }
     Write-CleanLine "Getting Windows images from $installPath"
     Get-WindowsImage -ImagePath $installPath | ForEach-Object {
       $image = Get-WindowsImage -ImagePath $installPath -Index $_.ImageIndex
@@ -447,7 +453,8 @@ function Get-WindowsIso($name, $destinationDirectory) {
   Patch-Aria2-Flags -CmdPath (Join-Path $buildDirectory 'uup_download_windows.cmd')
 
   # Raw log path
-  $rawLog = Join-Path $env:RUNNER_TEMP "uup_dism_aria2_raw.log"
+  $rawLogDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
+  $rawLog = Join-Path $rawLogDir "uup_dism_aria2_raw.log"
 
   choco install aria2 /y *> $null
 
@@ -462,7 +469,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
             if ($line -eq $null) { continue }
             # DISM progress buckets; aria2 is not parsed here
             if (-not (Process-ProgressLine $line)) {
-              if ($line -match '^\s*(Mounting image|Saving image|Applying image|Exporting image|Unmounting image|Deployment Image Servicing and Management tool|^=== )') {
+              if ($line -match '^\s*(Mounting image|Saving image|Applying image|Exporting image|Unmounting image|Deployment Image Servicing and Management tool|=== )') {
                 Reset-ProgressSession
               }
               Write-CleanLine $line
@@ -480,7 +487,10 @@ function Get-WindowsIso($name, $destinationDirectory) {
 
   Pop-Location
 
-  $sourceIsoPath = Resolve-Path $buildDirectory/*.iso
+  $isoFiles = @(Resolve-Path "$buildDirectory/*.iso" -ErrorAction SilentlyContinue)
+  if ($isoFiles.Count -eq 0) { throw "No ISO file found in $buildDirectory after build" }
+  if ($isoFiles.Count -gt 1) { Write-CleanLine "WARN: Multiple ISO files found in ${buildDirectory}: $($isoFiles -join ', '). Using the first one." }
+  $sourceIsoPath = $isoFiles[0]
   $IsoName = Split-Path $sourceIsoPath -leaf
 
   Write-CleanLine "Getting the $sourceIsoPath checksum"
@@ -512,9 +522,11 @@ function Get-WindowsIso($name, $destinationDirectory) {
   Write-CleanLine "Cleaning up build directory to save space..."
   Remove-Item -Force -Recurse $buildDirectory -ErrorAction SilentlyContinue
 
-  Write-Output "ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
   $fullIsoPath = (Resolve-Path "$destinationDirectory/$IsoName").Path
-  Write-Output "ISO_PATH=$fullIsoPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+  if ($env:GITHUB_ENV) {
+    Write-Output "ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    Write-Output "ISO_PATH=$fullIsoPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+  }
   Write-CleanLine 'All Done.'
 }
 

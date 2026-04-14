@@ -209,6 +209,26 @@ jobs:
          Write-Host "Free space after:"
          Get-PSDrive C
 
+      - name: Install ADK Deployment Tools (oscdimg)
+        if: ${{ inputs.tiny11 }}
+        shell: pwsh
+        run: |
+          $adkPath = "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools"
+          if (Test-Path "$adkPath\$env:PROCESSOR_ARCHITECTURE\Oscdimg\oscdimg.exe") {
+            Write-Output "ADK Deployment Tools already installed, skipping."
+            return
+          }
+          Write-Output "Downloading Windows ADK setup..."
+          $adkSetup = Join-Path $env:RUNNER_TEMP "adksetup.exe"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2337875" -OutFile $adkSetup -UseBasicParsing
+          Write-Output "Installing ADK Deployment Tools (oscdimg)..."
+          Start-Process -Wait -FilePath $adkSetup -ArgumentList '/quiet', '/norestart', '/features', 'OptionId.DeploymentTools'
+          if (Test-Path "$adkPath\$env:PROCESSOR_ARCHITECTURE\Oscdimg\oscdimg.exe") {
+            Write-Output "ADK Deployment Tools installed successfully."
+          } else {
+            Write-Output "::warning::ADK install may have failed. Tiny11 will fall back to downloading oscdimg.exe."
+          }
+
       # ============================================================
       # STAGE 1: Build Windows ISO via UUP dump
       # ============================================================

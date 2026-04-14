@@ -293,9 +293,12 @@ function Initialize-Directories {
 function Convert-ESDToWIM {
     Write-Log "Converting install.esd to install.wim..."
     
-    $esdPath = "$DriveLetter\sources\install.esd"
+    $esdPath = "$tiny11Dir\sources\install.esd"
     $tempWimPath = "$tiny11Dir\sources\install.wim"
     
+    # Remove read-only attribute from copied install.esd
+    Set-ItemProperty -Path $esdPath -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
+
     # Validate index exists in ESD
     $images = Get-WindowsImage -ImagePath $esdPath
     $validIndices = $images.ImageIndex
@@ -309,6 +312,9 @@ function Convert-ESDToWIM {
     Export-WindowsImage -SourceImagePath $esdPath -SourceIndex $INDEX `
         -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity
     
+    # Remove the source ESD after successful conversion
+    Remove-Item -Path $esdPath -Force -ErrorAction SilentlyContinue
+
     Write-Log "ESD conversion complete"
 }
 
@@ -316,17 +322,11 @@ function Copy-WindowsFiles {
     Write-Log "Copying Windows installation files from $DriveLetter..."
     Copy-Item -Path "$DriveLetter\*" -Destination $tiny11Dir -Recurse -Force
     
-    # Remove read-only attribute and delete install.esd if present
-    if (Test-Path "$tiny11Dir\sources\install.esd") {
-        Set-ItemProperty -Path "$tiny11Dir\sources\install.esd" -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
-        Remove-Item "$tiny11Dir\sources\install.esd" -Force -ErrorAction SilentlyContinue
-    }
-
     if (-not (Test-Path "$tiny11Dir\sources\boot.wim")) {
         throw "Copied source is invalid: missing $tiny11Dir\sources\boot.wim"
     }
-    if (-not (Test-Path "$tiny11Dir\sources\install.wim")) {
-        throw "Copied source is invalid: missing $tiny11Dir\sources\install.wim"
+    if (-not (Test-Path "$tiny11Dir\sources\install.wim") -and -not (Test-Path "$tiny11Dir\sources\install.esd")) {
+        throw "Copied source is invalid: missing both install.wim and install.esd in $tiny11Dir\sources"
     }
     
     Write-Log "File copy complete"
@@ -368,11 +368,13 @@ function Get-ImageMetadata {
     
     # Get language
     $imageIntl = & dism /English /Get-Intl "/Image:$scratchDir"
-    $languageLine = $imageIntl -split '\n' | Where-Object { $_ -match 'Default system UI language : ([a-zA-Z]{2}-[a-zA-Z]{2})' }
+    $languageLine = $imageIntl -split '\n' | Where-Object { $_ -match 'Default system UI language : ([a-zA-Z]{2,3}(?:-[a-zA-Z]{2,8})+)' }
     
     if ($languageLine) {
-        $script:languageCode = $Matches[1]
-        Write-Log "Language: $script:languageCode"
+        $languageCode = $Matches[1]
+        Write-Log "Language: $languageCode"
+    } else {
+        Write-Log "Could not determine image language" "WARN"
     }
     
     # Get architecture
@@ -381,11 +383,8 @@ function Get-ImageMetadata {
     
     foreach ($line in $lines) {
         if ($line -like '*Architecture : *') {
-            $script:architecture = $line -replace 'Architecture : ', ''
-            if ($script:architecture -eq 'x64') {
-                $script:architecture = 'amd64'
-            }
-            Write-Log "Architecture: $script:architecture"
+            $imageArch = ($line -replace 'Architecture : ', '').Trim()
+            Write-Log "Architecture: $imageArch"
             break
         }
     }
@@ -466,15 +465,21 @@ function Remove-BloatwareApps {
     }
     
     $removeCount = 0
+    $failCount = 0
     foreach ($package in $packagesToRemove) {
         Write-Log "Removing: $package"
-        Invoke-NativeChecked -FilePath 'dism' -Arguments @(
-            '/English',
-            "/image:$scratchDir",
-            '/Remove-ProvisionedAppxPackage',
-            "/PackageName:$package"
-        ) -Action "Remove provisioned appx package $package" | Out-Null
-        $removeCount++
+        try {
+            Invoke-NativeChecked -FilePath 'dism' -Arguments @(
+                '/English',
+                "/image:$scratchDir",
+                '/Remove-ProvisionedAppxPackage',
+                "/PackageName:$package"
+            ) -Action "Remove provisioned appx package $package" | Out-Null
+            $removeCount++
+        } catch {
+            Write-Log "Could not remove package ${package}: $_" "WARN"
+            $failCount++
+        }
     }
     
     Write-Log "Removed $removeCount appx packages"
@@ -482,9 +487,6 @@ function Remove-BloatwareApps {
 
 function Remove-EdgeAndOneDrive {
     Write-Log "Removing Microsoft Edge..."
-    
-    $adminSID = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544")
-    $adminAccount = $adminSID.Translate([System.Security.Principal.NTAccount]).Value
     
     $edgePaths = @(
         "$scratchDir\Program Files (x86)\Microsoft\Edge",
@@ -495,18 +497,18 @@ function Remove-EdgeAndOneDrive {
     
     foreach ($path in $edgePaths) {
         if (Test-Path $path) {
-            & takeown /f $path /r /a | Out-Null
-            & icacls $path /grant "${adminAccount}:(F)" /T /C | Out-Null
-            Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+            if (-not (Remove-PathQuietly -Path $path -Description "Edge: $path" -Recurse)) {
+                Write-Log "Some Edge files remain at: $path" "WARN"
+            }
         }
     }
     
     Write-Log "Removing OneDrive..."
     $oneDrivePath = "$scratchDir\Windows\System32\OneDriveSetup.exe"
     if (Test-Path $oneDrivePath) {
-        & takeown /f $oneDrivePath /a | Out-Null
-        & icacls $oneDrivePath /grant "${adminAccount}:(F)" /T /C | Out-Null
-        Remove-Item -Path $oneDrivePath -Force -ErrorAction SilentlyContinue
+        if (-not (Remove-PathQuietly -Path $oneDrivePath -Description "OneDriveSetup.exe")) {
+            Write-Log "Could not fully remove OneDrive setup" "WARN"
+        }
     }
     
     Write-Log "Edge and OneDrive removal complete"
@@ -537,9 +539,9 @@ function Set-RegistryTweaks {
     Set-RegistryValue 'HKLM\zSYSTEM\Setup\MoSetup' 'AllowUpgradesWithUnsupportedTPMOrCPU' 'REG_DWORD' '1'
     
     # Disable sponsored apps and regional bloatware (Yandex, TikTok, etc.)
-    Set-RegistryValue 'HKLM\zNTUSER\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'OemPreInstalledAppsEnabled' 'REG_DWORD' '0'
-    Set-RegistryValue 'HKLM\zNTUSER\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'PreInstalledAppsEnabled' 'REG_DWORD' '0'
-    Set-RegistryValue 'HKLM\zNTUSER\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'SilentInstalledAppsEnabled' 'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'OemPreInstalledAppsEnabled' 'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'PreInstalledAppsEnabled' 'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'SilentInstalledAppsEnabled' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'ContentDeliveryAllowed' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'FeatureManagementEnabled' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'PreInstalledAppsEverEnabled' 'REG_DWORD' '0'
@@ -725,7 +727,19 @@ function Optimize-WindowsImage {
 
 function Dismount-AndExport {
     Write-Log "Dismounting install.wim..."
-    Dismount-WindowsImage -Path $scratchDir -Save
+    try {
+        Dismount-WindowsImage -Path $scratchDir -Save
+    } catch {
+        Write-Log "Dismount-WindowsImage -Save failed: $_. Retrying..." "WARN"
+        Start-Sleep -Seconds 5
+        try {
+            Dismount-WindowsImage -Path $scratchDir -Save
+        } catch {
+            Write-Log "Dismount-WindowsImage -Save failed on retry. Discarding changes." "ERROR"
+            Dismount-WindowsImage -Path $scratchDir -Discard -ErrorAction SilentlyContinue
+            throw "Failed to save and dismount install.wim after retry"
+        }
+    }
     
     if ($ESD) {
         Write-Log "Exporting image as ESD with maximum compression (this may take 15-20 minutes)..."
@@ -790,7 +804,19 @@ function Invoke-BootImageProcessing {
     Dismount-RegistryHives
     
     Write-Log "Dismounting boot.wim..."
-    Dismount-WindowsImage -Path $scratchDir -Save
+    try {
+        Dismount-WindowsImage -Path $scratchDir -Save
+    } catch {
+        Write-Log "Dismount boot.wim -Save failed: $_. Retrying..." "WARN"
+        Start-Sleep -Seconds 5
+        try {
+            Dismount-WindowsImage -Path $scratchDir -Save
+        } catch {
+            Write-Log "Dismount boot.wim -Save failed on retry. Discarding changes." "ERROR"
+            Dismount-WindowsImage -Path $scratchDir -Discard -ErrorAction SilentlyContinue
+            throw "Failed to save and dismount boot.wim after retry"
+        }
+    }
     
     Write-Log "Boot image processing complete"
 }
@@ -919,17 +945,19 @@ try {
     
     Test-Prerequisites
     
-    # Handle install.esd conversion if needed
-    if (Test-Path "$DriveLetter\sources\install.esd") {
+    # Copy source files and handle install.esd conversion if needed
+    Initialize-Directories
+    Copy-WindowsFiles
+
+    if (Test-Path "$tiny11Dir\sources\install.esd") {
         Write-Log "Found install.esd, conversion required"
-        Initialize-Directories
         Convert-ESDToWIM
-        Copy-WindowsFiles
-    }
-    else {
+    } else {
         Write-Log "Found install.wim, no conversion needed"
-        Initialize-Directories
-        Copy-WindowsFiles
+    }
+
+    if (-not (Test-Path $wimFilePath)) {
+        throw "install.wim not found at $wimFilePath after file preparation"
     }
     
     Test-ImageIndex
