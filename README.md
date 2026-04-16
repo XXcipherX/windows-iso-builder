@@ -33,7 +33,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 
 | Input | Options | Default |
 |-------|---------|---------|
-| **Version** | Windows 10 22H2, Windows 11 23H2/24H2/24H2 BETA/25H2/25H2 BETA/26H1, DEV, CANARY | Windows 11 25H2 |
+| **Version** | Windows 11 25H2/25H2 BETA/26H1, DEV, CANARY | Windows 11 25H2 |
 | **Architecture** | x64, arm64 | x64 |
 | **Edition** | Pro, Home, Multi | Pro |
 | **Language** | 38 languages (ar-sa → zh-tw) | English (United States) |
@@ -80,7 +80,7 @@ When enabled, the built ISO is processed through Tiny11 which:
 ### Build ISO only (UUP dump)
 
 ```powershell
-pwsh uup-dump-get-windows-iso.ps1 windows-11new c:/output -architecture x64 -edition pro -lang en-us -esd -netfx3
+pwsh uup-dump-get-windows-iso.ps1 win11-25h2 c:/output -architecture x64 -edition pro -lang en-us -esd -netfx3
 ```
 
 ### Optimize existing ISO (Tiny11)

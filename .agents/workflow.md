@@ -9,7 +9,7 @@ The workflow is manually triggered with `workflow_dispatch`.
 Main inputs:
 
 - `architecture`: `x64` or `arm64`; default `x64`.
-- `versions`: Windows target; default `Windows 11 25H2`.
+- `versions`: Windows target; options are `Windows 11 25H2`, `Windows 11 25H2 BETA`, `Windows 11 26H1`, `Windows DEV`, and `Windows CANARY`; default `Windows 11 25H2`.
 - `edition`: `Pro`, `Home`, or `Multi`; default `Pro`.
 - `language`: one of the supported UI language labels; default `English (United States)`.
 - `revision`: optional build revision suffix.
@@ -29,7 +29,7 @@ The workflow chooses the runner from the architecture:
 1. Checkout the repository.
 2. Map user-facing inputs to script values:
    - Language labels become UUP language codes such as `en-us` and `ru-ru`.
-   - Version labels become `uup-dump-get-windows-iso.ps1` target names such as `windows-11new`.
+   - Version labels become `uup-dump-get-windows-iso.ps1` target names such as `win11-25h2`.
    - UUP ESD compression is enabled only when `esd=true` and `tiny11=false`, because Tiny11 recompresses later when requested.
 3. Free disk space on the runner.
 4. Build the Windows ISO through `uup-dump-get-windows-iso.ps1`.

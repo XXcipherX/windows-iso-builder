@@ -6,7 +6,7 @@ This project is Windows-first. Full builds are heavy and usually need administra
 
 ```powershell
 pwsh .\uup-dump-get-windows-iso.ps1 `
-  windows-11new `
+  win11-25h2 `
   c:\output `
   -architecture x64 `
   -edition pro `

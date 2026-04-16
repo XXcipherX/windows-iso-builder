@@ -99,11 +99,6 @@ function Process-ProgressLine([string]$line) {
 # ------------------------------
 $arch = if ($architecture -eq "x64") { "amd64" } else { "arm64" }
 
-if ($windowsTargetName -match 'beta|dev|wif|canary') {
-  $preview = $true
-  $ringLower = @('beta','dev','wif','canary').Where({$windowsTargetName -match $_})[0]
-}
-
 function Get-EditionName($e) {
   switch ($e.ToLower()) {
     "core"  { "Core" }
@@ -117,15 +112,21 @@ $dotSystemRevision = if ([string]::IsNullOrWhiteSpace($revision)) { '' } else { 
 $systemRevision = if ([string]::IsNullOrWhiteSpace($revision)) { '' } else { " $revision" }
 
 $TARGETS = @{
-  "windows-10"       = @{ search="windows 10 19045$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "windows-11old"    = @{ search="windows 11 22631$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "windows-11"       = @{ search="windows 11 26100$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "windows-11new"    = @{ search="windows 11 26200$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "windows-11beta"   = @{ search="windows 11 26120$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Beta" }
-  "windows-11dev"    = @{ search="windows 11 26220$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Wif" }
-  "windows-1126h1"   = @{ search="windows 11 28000$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "windows-dev"      = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Dev" }
-  "windows-canary"   = @{ search="windows 11$systemRevision $arch"; edition=(Get-EditionName $edition); ring="Canary" }
+  "win11-25h2"      = @{ search="windows 11 26200$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
+  "win11-25h2-beta" = @{ search="windows 11 26220$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Wif"; allowedRings=@("Wif","Wis","Beta"); displayVersion="BETA" }
+  "win11-26h1"      = @{ search="windows 11 28000$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
+  "win11-dev"       = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Dev"; allowedRings=@("Dev","Wif","Wis"); displayVersion="DEV" }
+  "win11-canary"    = @{ search="windows 11$systemRevision $arch"; edition=(Get-EditionName $edition); ring="Canary"; allowedRings=@("Canary"); displayVersion="CANARY" }
+}
+
+if (-not $TARGETS.ContainsKey($windowsTargetName)) {
+  throw "Unsupported Windows target '$windowsTargetName'. Valid targets: $(@($TARGETS.Keys | Sort-Object) -join ', ')"
+}
+
+$currentTarget = $TARGETS[$windowsTargetName]
+if ($currentTarget.ContainsKey('ring')) {
+  $preview = $true
+  $ringLower = "$($currentTarget.ring)".ToLowerInvariant()
 }
 
 function New-QueryString([hashtable]$parameters) {
@@ -241,17 +242,18 @@ function Get-UupDumpIso($name, $target) {
       'unknown'
     }
 
-    if ($ringLower) {
-      $expectedRing = $ringLower.ToUpper()
+    $allowedRings = @()
+    if ($target.ContainsKey('allowedRings')) {
+      $allowedRings = @($target.allowedRings | ForEach-Object { "$_".ToUpperInvariant() })
+    }
+    elseif ($target.ContainsKey('ring')) {
+      $allowedRings = @("$($target.ring)".ToUpperInvariant())
+    }
+
+    if ($allowedRings.Count -gt 0) {
       $actualRing = $selectedRing.ToUpper()
-      if ($ringLower -in @('dev', 'beta')) {
-        if ($actualRing -notin @($expectedRing, 'WIF', 'WIS')) {
-          Write-CleanLine "Skipping candidate ${id}: expected ring $expectedRing/WIF/WIS, got ring=$actualRing."
-          continue
-        }
-      }
-      elseif ($actualRing -ne $expectedRing) {
-        Write-CleanLine "Skipping candidate ${id}: expected ring $expectedRing, got ring=$actualRing."
+      if ($actualRing -notin $allowedRings) {
+        Write-CleanLine "Skipping candidate ${id}: expected ring $($allowedRings -join '/'), got ring=$actualRing."
         continue
       }
     }
@@ -356,8 +358,9 @@ function Patch-Aria2-Flags {
 }
 
 function Get-WindowsIso($name, $destinationDirectory) {
-  $iso = Get-UupDumpIso $name $TARGETS.$name
-  if (-not $iso) { throw "Can't find UUP for $name ($($TARGETS.$name.search)), lang=$lang." }
+  $target = $TARGETS[$name]
+  $iso = Get-UupDumpIso $name $target
+  if (-not $iso) { throw "Can't find UUP for $name ($($target.search)), lang=$lang." }
 
   $selectedRing = if ($iso.PSObject.Properties.Name -contains 'ring' -and $iso.ring) { "$($iso.ring)".ToUpper() } else { 'UNKNOWN' }
   $selectedInfo = "id=$($iso.id); build=$($iso.build); ring=$selectedRing; title=$($iso.title)"
@@ -365,7 +368,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
 
   $isoHasEdition    = $iso.PSObject.Properties.Name -contains 'edition' -and $iso.edition
   $hasVirtualMember = $iso.PSObject.Properties.Name -contains 'virtualEdition' -and $iso.virtualEdition
-  $effectiveEdition = if ($isoHasEdition) { $iso.edition } else { $TARGETS.$name.edition }
+  $effectiveEdition = if ($isoHasEdition) { $iso.edition } else { $target.edition }
 
   if (!$preview) {
     if ($iso.title -match '(?i)version\s*([0-9A-Za-z\.\-]+)') {
@@ -375,7 +378,13 @@ function Get-WindowsIso($name, $destinationDirectory) {
       Write-CleanLine "WARN: Could not parse version from title. Falling back to build: $verbuild"
     }
   } else {
-    $verbuild = $ringLower.ToUpper()
+    $verbuild = if ($target.ContainsKey('displayVersion')) {
+      "$($target.displayVersion)"
+    } elseif ($target.ContainsKey('ring')) {
+      "$($target.ring)".ToUpperInvariant()
+    } else {
+      $ringLower.ToUpperInvariant()
+    }
   }
 
   $buildDirectory               = "$destinationDirectory/$name"
