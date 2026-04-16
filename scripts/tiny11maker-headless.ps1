@@ -156,6 +156,7 @@ function Remove-RegistryValue {
         else {
             $details = if ($commandOutput) { " Output: $commandOutput" } else { "" }
             if ($commandOutput -match 'unable to find the specified registry key or value') {
+                Write-Log "Registry key or value not found: $path.$details" "WARN"
                 return
             }
             else {
