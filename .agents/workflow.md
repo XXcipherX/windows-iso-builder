@@ -10,7 +10,7 @@ Main inputs:
 
 - `architecture`: `x64` or `arm64`; default `x64`.
 - `versions`: Windows target; options are `Windows 11 25H2`, `Windows 11 25H2 BETA`, `Windows 11 26H1`, `Windows DEV`, and `Windows CANARY`; default `Windows 11 25H2`.
-- `edition`: `Pro`, `Home`, or `Multi`; default `Pro`.
+- `edition`: `Pro` or `Home`; default `Pro`.
 - `language`: one of the supported UI language labels; default `English (United States)`.
 - `revision`: optional build revision suffix.
 - `esd`: request ESD compression; default `false`.

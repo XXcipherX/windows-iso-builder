@@ -1,7 +1,7 @@
 name: Build Windows
 run-name: >
   ${{ inputs.versions }}
-  ${{ fromJSON('{"Pro":"PRO","Home":"HOME","Multi":"MULTI"}')[inputs.edition] }}
+  ${{ fromJSON('{"Pro":"PRO","Home":"HOME"}')[inputs.edition] }}
   ${{ fromJSON('{"x64":"X64","arm64":"ARM64"}')[inputs.architecture] }}
   ${{ fromJSON('{
     "Arabic (Saudi Arabia)":"AR","Bulgarian (Bulgaria)":"BG","Czech (Czech Republic)":"CS","Danish (Denmark)":"DA","German (Germany)":"DE","Greek (Greece)":"EL",
@@ -39,7 +39,7 @@ on:
       edition:
         description: "Windows edition to build"
         type: choice
-        options: [Pro, Home, Multi]
+        options: [Pro, Home]
         default: Pro
         required: true
       language:
@@ -239,7 +239,10 @@ jobs:
           # If Tiny11 is enabled, skip UUP dump ESD compression (Tiny11 re-compresses it anyway)
           if ('${{ steps.map.outputs.uup_esd }}' -eq 'true') { $splat.esd = $true }
           if ('${{ inputs.netfx3 }}' -eq 'true') { $splat.netfx3 = $true }
-          if ('${{ inputs.tiny11 }}' -eq 'true') { $splat.SkipChecksum = $true }
+          if ('${{ inputs.tiny11 }}' -eq 'true') {
+            $splat.SkipChecksum = $true
+            $splat.SkipImageMetadata = $true
+          }
 
           if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
             $splat.revision = '${{ inputs.revision }}'

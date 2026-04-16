@@ -35,7 +35,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 |-------|---------|---------|
 | **Version** | Windows 11 25H2/25H2 BETA/26H1, DEV, CANARY | Windows 11 25H2 |
 | **Architecture** | x64, arm64 | x64 |
-| **Edition** | Pro, Home, Multi | Pro |
+| **Edition** | Pro, Home | Pro |
 | **Language** | 38 languages (ar-sa → zh-tw) | English (United States) |
 | **Revision** | Optional build revision number | — |
 

@@ -4,13 +4,14 @@ param(
   [string]$windowsTargetName,
   [string]$destinationDirectory = 'output',
   [ValidateSet("x64", "arm64")] [string]$architecture = "x64",
-  [ValidateSet("pro", "core", "multi", "home")] [string]$edition = "pro",
+  [ValidateSet("pro", "home")] [string]$edition = "pro",
   [ValidateSet("nb-no", "fr-ca", "fi-fi", "lv-lv", "es-es", "en-gb", "zh-tw", "th-th", "sv-se", "en-us", "es-mx", "bg-bg", "hr-hr", "pt-br", "el-gr", "cs-cz", "it-it", "sk-sk", "pl-pl", "sl-si", "neutral", "ja-jp", "et-ee", "ro-ro", "fr-fr", "pt-pt", "ar-sa", "lt-lt", "hu-hu", "da-dk", "zh-cn", "uk-ua", "tr-tr", "ru-ru", "nl-nl", "he-il", "ko-kr", "sr-latn-rs", "de-de")]
   [string]$lang = "en-us",
   [switch]$esd,
   [switch]$netfx3,
   [string]$revision,
-  [switch]$SkipChecksum
+  [switch]$SkipChecksum,
+  [switch]$SkipImageMetadata
 )
 
 Set-StrictMode -Version Latest
@@ -101,11 +102,14 @@ $arch = if ($architecture -eq "x64") { "amd64" } else { "arm64" }
 
 function Get-EditionName($e) {
   switch ($e.ToLower()) {
-    "core"  { "Core" }
     "home"  { "Core" }
-    "multi" { "Multi" }
     default { "Professional" }
   }
+}
+
+function Get-ExpectedWindowsImages($e) {
+  $imageName = if ((Get-EditionName $e) -eq "Core") { "Windows 11 Home" } else { "Windows 11 Pro" }
+  [PSCustomObject]@{ index = 1; name = $imageName; version = $null }
 }
 
 $dotSystemRevision = if ([string]::IsNullOrWhiteSpace($revision)) { '' } else { ".$revision" }
@@ -224,13 +228,7 @@ function Get-UupDumpIso($name, $target) {
 
     $editions = @(Get-ApiItemNames $candidate.Value.editions)
     $expectedEdition = Get-EditionName $edition
-    if ($expectedEdition -eq 'Multi') {
-      if (($editions -notcontains 'Professional') -and ($editions -notcontains 'Core')) {
-        Write-CleanLine "Skipping candidate ${id}: expected Multi (Professional/Core), got editions=$($editions -join ',')."
-        continue
-      }
-    }
-    elseif ($editions -notcontains $expectedEdition) {
+    if ($editions -notcontains $expectedEdition) {
       Write-CleanLine "Skipping candidate ${id}: expected edition=$expectedEdition, got editions=$($editions -join ',')."
       continue
     }
@@ -266,9 +264,9 @@ function Get-UupDumpIso($name, $target) {
       id                 = $id
       edition            = $target.edition
       virtualEdition     = $target['virtualEdition']
-      apiUrl             = 'https://api.uupdump.net/get.php?' + (New-QueryString @{ id = $id; lang = $lang; edition = if ($edition -eq "multi") { "core;professional" } else { $target.edition } })
-      downloadUrl        = 'https://uupdump.net/download.php?' + (New-QueryString @{ id = $id; pack = $lang; edition = if ($edition -eq "multi") { "core;professional" } else { $target.edition } })
-      downloadPackageUrl = 'https://uupdump.net/get.php?' + (New-QueryString @{ id = $id; pack = $lang; edition = if ($edition -eq "multi") { "core;professional" } else { $target.edition } })
+      apiUrl             = 'https://api.uupdump.net/get.php?' + (New-QueryString @{ id = $id; lang = $lang; edition = $target.edition })
+      downloadUrl        = 'https://uupdump.net/download.php?' + (New-QueryString @{ id = $id; pack = $lang; edition = $target.edition })
+      downloadPackageUrl = 'https://uupdump.net/get.php?' + (New-QueryString @{ id = $id; pack = $lang; edition = $target.edition })
     }
   }
 
@@ -479,7 +477,12 @@ function Get-WindowsIso($name, $destinationDirectory) {
     $isoChecksum = (Get-FileHash -Algorithm SHA256 $sourceIsoPath).Hash.ToLowerInvariant()
   }
 
-  $windowsImages = Get-IsoWindowsImages $sourceIsoPath
+  if ($SkipImageMetadata) {
+    Write-CleanLine "Skipping intermediate ISO mount for image metadata; using expected single-edition metadata."
+    $windowsImages = Get-ExpectedWindowsImages $edition
+  } else {
+    $windowsImages = Get-IsoWindowsImages $sourceIsoPath
+  }
   Set-Content -Path $destinationIsoMetadataPath -Value (
     ([PSCustomObject]@{
       name    = $name
