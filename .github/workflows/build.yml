@@ -402,6 +402,7 @@ jobs:
             c:/output/*.ISO
             c:/output/*.sha256
             c:/output/verify_checksums.txt
+          compression-level: 0
           if-no-files-found: error
 
       - name: Set artifact_url
