@@ -241,7 +241,6 @@ jobs:
           if ('${{ inputs.netfx3 }}' -eq 'true') { $splat.netfx3 = $true }
           if ('${{ inputs.tiny11 }}' -eq 'true') {
             $splat.SkipChecksum = $true
-            $splat.SkipImageMetadata = $true
           }
 
           if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
@@ -418,19 +417,7 @@ jobs:
         shell: pwsh
         run: |
           $iso = Get-Content (Resolve-Path c:/output/*.json) | ConvertFrom-Json
-          $imageNames = $iso.images | ForEach-Object { $_.name }
-          if ($imageNames.Count -gt 1) {
-            if ($imageNames[0] -match '^(Windows (10|11))\s*(.*)') {
-              $prefix = $matches[1]
-              $first = $imageNames[0]
-              $rest = $imageNames[1..($imageNames.Count - 1)] | ForEach-Object { ($_ -replace "^$prefix\s*", '') }
-              $finalImageName = $first + '/' + ($rest -join '/')
-            } else {
-              $finalImageName = $imageNames -join '/'
-            }
-          } else {
-            $finalImageName = $imageNames
-          }
+          $summaryName = "Windows 11 ${{ inputs.edition }} $($iso.version)"
 
           # Use Tiny11 checksum if available, otherwise use UUP dump checksum
           $checksum = if ($env:ISO_CHECKSUM) { $env:ISO_CHECKSUM } else { $iso.checksum }
@@ -461,7 +448,7 @@ jobs:
           ### FILE INFO:
           | Property | Value |
           | :--- | :--- |
-          | Name | $finalImageName $($iso.version) |
+          | Name | $summaryName |
           | Build | $($iso.build) |
           | Architecture | ${{ inputs.architecture }} |
           "@
@@ -475,7 +462,6 @@ jobs:
 
           Add-Content $env:GITHUB_STEP_SUMMARY @"
           | Checksum | $checksum |
-          | Image Name | $finalImageName |
           | Iso | [$env:ISO_NAME]($env:artifact_url) |
           | UUP dump | [$($iso.title)]($($iso.uupDump.downloadUrl)) |
           "@

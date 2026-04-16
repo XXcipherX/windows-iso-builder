@@ -36,7 +36,7 @@ The workflow chooses the runner from the architecture:
 5. If `tiny11=true`, copy `autounattend.xml` into `scripts/`, run `scripts/tiny11maker-headless.ps1`, replace the original ISO with the `_Tiny11.iso` output, and recalculate SHA256.
 6. Generate verification instructions.
 7. Upload the ISO and checksum artifacts.
-8. Write a GitHub step summary with image metadata, checksum, artifact link, and UUP dump source link.
+8. Write a GitHub step summary with build details, checksum, artifact link, and UUP dump source link.
 
 ## Important behavior
 

@@ -10,8 +10,7 @@ param(
   [switch]$esd,
   [switch]$netfx3,
   [string]$revision,
-  [switch]$SkipChecksum,
-  [switch]$SkipImageMetadata
+  [switch]$SkipChecksum
 )
 
 Set-StrictMode -Version Latest
@@ -107,19 +106,14 @@ function Get-EditionName($e) {
   }
 }
 
-function Get-ExpectedWindowsImages($e) {
-  $imageName = if ((Get-EditionName $e) -eq "Core") { "Windows 11 Home" } else { "Windows 11 Pro" }
-  [PSCustomObject]@{ index = 1; name = $imageName; version = $null }
-}
-
 $dotSystemRevision = if ([string]::IsNullOrWhiteSpace($revision)) { '' } else { ".$revision" }
 $systemRevision = if ([string]::IsNullOrWhiteSpace($revision)) { '' } else { " $revision" }
 
 $TARGETS = @{
   "win11-25h2"      = @{ search="windows 11 26200$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "win11-25h2-beta" = @{ search="windows 11 26220$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Wif"; allowedRings=@("Wif","Wis","Beta"); displayVersion="BETA" }
+  "win11-25h2-beta" = @{ search="windows 11 26220$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Wif"; allowedRings=@("Wif","Wis","Beta"); displayVersion="25H2 BETA" }
   "win11-26h1"      = @{ search="windows 11 28000$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "win11-dev"       = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Dev"; allowedRings=@("Dev","Wif","Wis"); displayVersion="DEV" }
+  "win11-dev"       = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Dev"; allowedRings=@("Dev","Wif","Wis"); displayVersion="25H2 DEV" }
   "win11-canary"    = @{ search="windows 11$systemRevision $arch"; edition=(Get-EditionName $edition); ring="Canary"; allowedRings=@("Canary"); displayVersion="CANARY" }
 }
 
@@ -272,48 +266,6 @@ function Get-UupDumpIso($name, $target) {
 
   Write-CleanLine "No UUP candidates matched filters for $name."
   return $null
-}
-
-function Get-IsoWindowsImages($isoPath) {
-  $isoPath = Resolve-Path $isoPath
-  Write-CleanLine "Mounting $isoPath"
-  $isoImage = Mount-DiskImage $isoPath -PassThru
-  try {
-    $driveLetter = $null
-    for ($attempt = 0; $attempt -lt 10 -and -not $driveLetter; $attempt++) {
-      $isoVolume = $isoImage | Get-Volume -ErrorAction SilentlyContinue
-      if ($isoVolume) {
-        $driveLetter = $isoVolume |
-          Where-Object { $_.PSObject.Properties.Name -contains 'DriveLetter' -and $_.DriveLetter } |
-          Select-Object -First 1 -ExpandProperty DriveLetter
-      }
-
-      if (-not $driveLetter) {
-        Start-Sleep -Milliseconds 500
-      }
-    }
-
-    if (-not $driveLetter) {
-      throw "Mounted ISO has no accessible drive letter: $isoPath"
-    }
-
-    $installPath = if (Test-Path "${driveLetter}:\sources\install.wim") {
-      "${driveLetter}:\sources\install.wim"
-    } elseif (Test-Path "${driveLetter}:\sources\install.esd") {
-      "${driveLetter}:\sources\install.esd"
-    } else {
-      throw "No install.wim or install.esd found at ${driveLetter}:\sources\"
-    }
-    Write-CleanLine "Getting Windows images from $installPath"
-    Get-WindowsImage -ImagePath $installPath | ForEach-Object {
-      $image = Get-WindowsImage -ImagePath $installPath -Index $_.ImageIndex
-      [PSCustomObject]@{ index = $image.ImageIndex; name = $image.ImageName; version = $image.Version }
-    }
-  }
-  finally {
-    Write-CleanLine "Dismounting $isoPath"
-    Dismount-DiskImage $isoPath | Out-Null
-  }
 }
 
 # ------------------------------
@@ -477,12 +429,6 @@ function Get-WindowsIso($name, $destinationDirectory) {
     $isoChecksum = (Get-FileHash -Algorithm SHA256 $sourceIsoPath).Hash.ToLowerInvariant()
   }
 
-  if ($SkipImageMetadata) {
-    Write-CleanLine "Skipping intermediate ISO mount for image metadata; using expected single-edition metadata."
-    $windowsImages = Get-ExpectedWindowsImages $edition
-  } else {
-    $windowsImages = Get-IsoWindowsImages $sourceIsoPath
-  }
   Set-Content -Path $destinationIsoMetadataPath -Value (
     ([PSCustomObject]@{
       name    = $name
@@ -491,7 +437,6 @@ function Get-WindowsIso($name, $destinationDirectory) {
       version = $verbuild
       tags    = $tag
       checksum = $isoChecksum
-      images  = @($windowsImages)
       uupDump = @{
         id                 = $iso.id
         apiUrl             = $iso.apiUrl
