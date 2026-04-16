@@ -111,7 +111,7 @@ jobs:
     runs-on: ${{ fromJSON('{"x64":"windows-latest","arm64":"windows-11-arm"}')[inputs.architecture] }}
     timeout-minutes: 360
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout
@@ -225,7 +225,6 @@ jobs:
       # ============================================================
 
       - name: Build Windows ISO (UUP dump)
-        id: build_windows
         shell: pwsh
         run: |
           $splat = @{
@@ -363,7 +362,6 @@ jobs:
           echo "ISO_NAME=$isoName" >> $env:GITHUB_ENV
           echo "ISO_PATH=$newIsoPath" >> $env:GITHUB_ENV
           echo "ISO_CHECKSUM=$newChecksum" >> $env:GITHUB_ENV
-          echo "ISO_SIZE_GB=$sizeGB" >> $env:GITHUB_ENV
 
       # ============================================================
       # STAGE 3: Upload & Summary
@@ -407,16 +405,11 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-      - name: Set artifact_url
-        id: set_artifact_url
-        shell: pwsh
-        run: echo "artifact_url=${{ steps.upload_iso_artifact.outputs.artifact-url }}" >> $env:GITHUB_ENV
-
       - name: Build summary
-        id: build_summary
         shell: pwsh
         run: |
           $iso = Get-Content (Resolve-Path c:/output/*.json) | ConvertFrom-Json
+          $artifactUrl = '${{ steps.upload_iso_artifact.outputs.artifact-url }}'
           $summaryName = "Windows 11 ${{ inputs.edition }} $($iso.version)"
 
           # Use Tiny11 checksum if available, otherwise use UUP dump checksum
@@ -462,6 +455,6 @@ jobs:
 
           Add-Content $env:GITHUB_STEP_SUMMARY @"
           | Checksum | $checksum |
-          | Iso | [$env:ISO_NAME]($env:artifact_url) |
+          | Iso | [$env:ISO_NAME]($artifactUrl) |
           | UUP dump | [$($iso.title)]($($iso.uupDump.downloadUrl)) |
           "@

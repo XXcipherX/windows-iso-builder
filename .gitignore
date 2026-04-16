@@ -15,6 +15,7 @@ tiny11/
 scratchdir/
 Win11_Source.iso
 scripts/tiny11.iso
+scripts/autounattend.xml
 *.log
 *.tmp
 

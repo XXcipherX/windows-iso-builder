@@ -18,7 +18,6 @@ $ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
 
 $preview  = $false
-$ringLower = $null
 
 trap {
   Write-Host "ERROR: $_"
@@ -124,7 +123,6 @@ if (-not $TARGETS.ContainsKey($windowsTargetName)) {
 $currentTarget = $TARGETS[$windowsTargetName]
 if ($currentTarget.ContainsKey('ring')) {
   $preview = $true
-  $ringLower = "$($currentTarget.ring)".ToLowerInvariant()
 }
 
 function New-QueryString([hashtable]$parameters) {
@@ -257,7 +255,6 @@ function Get-UupDumpIso($name, $target) {
       ring               = $selectedRing
       id                 = $id
       edition            = $target.edition
-      virtualEdition     = $target['virtualEdition']
       apiUrl             = 'https://api.uupdump.net/get.php?' + (New-QueryString @{ id = $id; lang = $lang; edition = $target.edition })
       downloadUrl        = 'https://uupdump.net/download.php?' + (New-QueryString @{ id = $id; pack = $lang; edition = $target.edition })
       downloadPackageUrl = 'https://uupdump.net/get.php?' + (New-QueryString @{ id = $id; pack = $lang; edition = $target.edition })
@@ -316,10 +313,6 @@ function Get-WindowsIso($name, $destinationDirectory) {
   $selectedInfo = "id=$($iso.id); build=$($iso.build); ring=$selectedRing; title=$($iso.title)"
   Write-CleanLine "Selected UUP candidate: $selectedInfo"
 
-  $isoHasEdition    = $iso.PSObject.Properties.Name -contains 'edition' -and $iso.edition
-  $hasVirtualMember = $iso.PSObject.Properties.Name -contains 'virtualEdition' -and $iso.virtualEdition
-  $effectiveEdition = if ($isoHasEdition) { $iso.edition } else { $target.edition }
-
   if (!$preview) {
     if ($iso.title -match '(?i)version\s*([0-9A-Za-z\.\-]+)') {
       $verbuild = $matches[1]
@@ -330,10 +323,8 @@ function Get-WindowsIso($name, $destinationDirectory) {
   } else {
     $verbuild = if ($target.ContainsKey('displayVersion')) {
       "$($target.displayVersion)"
-    } elseif ($target.ContainsKey('ring')) {
-      "$($target.ring)".ToUpperInvariant()
     } else {
-      $ringLower.ToUpperInvariant()
+      "$($target.ring)".ToUpperInvariant()
     }
   }
 
@@ -344,12 +335,11 @@ function Get-WindowsIso($name, $destinationDirectory) {
   if (Test-Path $buildDirectory) { Remove-Item -Force -Recurse $buildDirectory | Out-Null }
   New-Item -ItemType Directory -Force $buildDirectory | Out-Null
 
-  $edn = if ($hasVirtualMember) { $iso.virtualEdition } else { $effectiveEdition }
-  Write-CleanLine $edn
-  $title = "$name $edn $($iso.build)"
+  Write-CleanLine "$($iso.edition)"
+  $title = "$name $($iso.edition) $($iso.build)"
 
   Write-CleanLine "Downloading the UUP dump download package for $title from $($iso.downloadPackageUrl)"
-  $downloadPackageBody = if ($hasVirtualMember) { @{ autodl=3; updates=1; cleanup=1; 'virtualEditions[]'=$iso.virtualEdition } } else { @{ autodl=2; updates=1; cleanup=1 } }
+  $downloadPackageBody = @{ autodl=2; updates=1; cleanup=1 }
   Invoke-WebRequest -Method Post -Uri $iso.downloadPackageUrl -Body $downloadPackageBody -OutFile "$buildDirectory.zip" | Out-Null
   Expand-Archive "$buildDirectory.zip" $buildDirectory
 
@@ -368,12 +358,6 @@ function Get-WindowsIso($name, $destinationDirectory) {
   $tag = ""
   if ($esd) { $convertConfig = $convertConfig -replace '^(wim2esd\s*)=.*', '$1=1'; $tag += ".E" }
   if ($netfx3) { $convertConfig = $convertConfig -replace '^(NetFx3\s*)=.*', '$1=1'; $tag += ".N" }
-  if ($hasVirtualMember) {
-    $convertConfig = $convertConfig `
-      -replace '^(StartVirtual\s*)=.*','$1=1' `
-      -replace '^(vDeleteSource\s*)=.*','$1=1' `
-      -replace '^(vAutoEditions\s*)=.*',"`$1=$($iso.virtualEdition)"
-  }
   Set-Content -Encoding ascii -Path $buildDirectory/ConvertConfig.ini -Value $convertConfig
 
   Write-CleanLine "Creating the $title iso file inside the $buildDirectory directory"
