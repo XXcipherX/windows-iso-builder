@@ -553,6 +553,11 @@ function Set-RegistryTweaks {
     Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'SubscribedContent-353694Enabled' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'SubscribedContent-353696Enabled' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'SystemPaneSuggestionsEnabled' 'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement' 'ScoobeSystemSettingEnabled' 'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' 'Start_IrisRecommendations' 'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' 'Start_AccountNotifications' 'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Explorer' 'ShowCloudFilesInQuickAccess' 'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Explorer' 'ShowRecommendations' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\PushToInstall' 'DisablePushToInstall' 'REG_DWORD' '1'
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\MRT' 'DontOfferThroughWUAU' 'REG_DWORD' '1'
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' 'DODownloadMode' 'REG_DWORD' '0'
@@ -661,12 +666,23 @@ function Remove-ScheduledTasks {
         # Appraiser/CEIP tasks vary by Windows 11 build; keep legacy names as best-effort.
         "$tasksPath\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser",
         "$tasksPath\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser Exp",
+        "$tasksPath\Microsoft\Windows\Application Experience\PcaPatchDbTask",
         "$tasksPath\Microsoft\Windows\Application Experience\ProgramDataUpdater",
+        "$tasksPath\Microsoft\Windows\Application Experience\StartupAppTask",
         "$tasksPath\Microsoft\Windows\Application Experience\MareBackup",
         "$tasksPath\Microsoft\Windows\Customer Experience Improvement Program\Consolidator",
         "$tasksPath\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip",
+        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClient",
+        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload",
+        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioUpload",
+        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioRun",
+        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClientOnUserSignIn",
         "$tasksPath\Microsoft\Windows\Chkdsk\Proxy",
-        "$tasksPath\Microsoft\Windows\Windows Error Reporting\QueueReporting"
+        "$tasksPath\Microsoft\Windows\Windows Error Reporting\QueueReporting",
+        "$tasksPath\Microsoft\Windows\Windows Error Reporting\ReportQueue",
+        "$tasksPath\Microsoft\Windows\WindowsAI\Recall\InitialConfiguration",
+        "$tasksPath\Microsoft\Windows\WindowsAI\Recall\PolicyConfiguration",
+        "$tasksPath\Microsoft\Windows\WindowsAI\Copilot\CopilotDataCollectionTask"
     )
 
     $removedCount = 0
