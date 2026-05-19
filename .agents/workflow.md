@@ -21,7 +21,7 @@ Main inputs:
 
 The workflow chooses the runner from the architecture:
 
-- `x64` -> `windows-latest`
+- `x64` -> `windows-2025-vs2026`
 - `arm64` -> `windows-11-arm`
 
 ## Stages

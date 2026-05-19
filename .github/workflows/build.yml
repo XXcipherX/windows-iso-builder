@@ -108,7 +108,7 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ fromJSON('{"x64":"windows-latest","arm64":"windows-11-arm"}')[inputs.architecture] }}
+    runs-on: ${{ fromJSON('{"x64":"windows-2025-vs2026","arm64":"windows-11-arm"}')[inputs.architecture] }}
     timeout-minutes: 360
     permissions:
       contents: read
