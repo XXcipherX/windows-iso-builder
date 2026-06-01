@@ -801,6 +801,17 @@ function Dismount-RegistryHives {
             }
         }
         else {
+            $providerPath = if ($hive -match '^HKLM\\(.+)$') {
+                "Registry::HKEY_LOCAL_MACHINE\$($Matches[1])"
+            } else {
+                $null
+            }
+
+            if ($providerPath -and -not (Test-Path -LiteralPath $providerPath)) {
+                Write-Log "Unload skipped for $hive (hive not loaded)." "INFO"
+                continue
+            }
+
             $maxAttempts = 3
             $unloaded = $false
 
@@ -905,17 +916,39 @@ function Invoke-BootImageProcessing {
     Mount-WindowsImage -ImagePath $bootWimPath -Index 2 -Path $scratchDir
     
     Write-Log "Loading boot image registry..."
-    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zCOMPONENTS', "$scratchDir\Windows\System32\config\COMPONENTS") -Action 'Load boot COMPONENTS hive' | Out-Null
+    $bootComponentsHive = "$scratchDir\Windows\System32\config\COMPONENTS"
+    if (Test-Path -LiteralPath $bootComponentsHive) {
+        Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zCOMPONENTS', $bootComponentsHive) -Action 'Load boot COMPONENTS hive' | Out-Null
+    }
+    else {
+        Write-Log "Boot COMPONENTS hive not found; skipping optional load." "WARN"
+    }
+
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zDEFAULT', "$scratchDir\Windows\System32\config\default") -Action 'Load boot DEFAULT hive' | Out-Null
-    Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zNTUSER', "$scratchDir\Users\Default\ntuser.dat") -Action 'Load boot NTUSER hive' | Out-Null
+
+    $bootNtUserHive = "$scratchDir\Users\Default\ntuser.dat"
+    $bootNtUserLoaded = $false
+    if (Test-Path -LiteralPath $bootNtUserHive) {
+        Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zNTUSER', $bootNtUserHive) -Action 'Load boot NTUSER hive' | Out-Null
+        $bootNtUserLoaded = $true
+    }
+    else {
+        Write-Log "Boot NTUSER hive not found; skipping per-user boot tweaks." "WARN"
+    }
+
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSOFTWARE', "$scratchDir\Windows\System32\config\SOFTWARE") -Action 'Load boot SOFTWARE hive' | Out-Null
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSYSTEM', "$scratchDir\Windows\System32\config\SYSTEM") -Action 'Load boot SYSTEM hive' | Out-Null
     
     Write-Log "Applying system requirement bypasses to boot image..."
     Set-RegistryValue 'HKLM\zDEFAULT\Control Panel\UnsupportedHardwareNotificationCache' 'SV1' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zDEFAULT\Control Panel\UnsupportedHardwareNotificationCache' 'SV2' 'REG_DWORD' '0'
-    Set-RegistryValue 'HKLM\zNTUSER\Control Panel\UnsupportedHardwareNotificationCache' 'SV1' 'REG_DWORD' '0'
-    Set-RegistryValue 'HKLM\zNTUSER\Control Panel\UnsupportedHardwareNotificationCache' 'SV2' 'REG_DWORD' '0'
+    if ($bootNtUserLoaded) {
+        Set-RegistryValue 'HKLM\zNTUSER\Control Panel\UnsupportedHardwareNotificationCache' 'SV1' 'REG_DWORD' '0'
+        Set-RegistryValue 'HKLM\zNTUSER\Control Panel\UnsupportedHardwareNotificationCache' 'SV2' 'REG_DWORD' '0'
+    }
+    else {
+        Write-Log "Skipping boot NTUSER unsupported hardware notification tweaks." "WARN"
+    }
     Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'HideUnsupportedHardwareNotifications' 'REG_DWORD' '1'
     Set-RegistryValue 'HKLM\zSYSTEM\Setup\LabConfig' 'BypassCPUCheck' 'REG_DWORD' '1'
     Set-RegistryValue 'HKLM\zSYSTEM\Setup\LabConfig' 'BypassRAMCheck' 'REG_DWORD' '1'
