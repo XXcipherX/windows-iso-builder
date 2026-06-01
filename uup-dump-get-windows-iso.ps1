@@ -335,7 +335,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
   if (Test-Path $buildDirectory) { Remove-Item -Force -Recurse $buildDirectory | Out-Null }
   New-Item -ItemType Directory -Force $buildDirectory | Out-Null
 
-  Write-CleanLine "$($iso.edition)"
+  Write-CleanLine "Selected edition: $($iso.edition)"
   $title = "$name $($iso.edition) $($iso.build)"
 
   Write-CleanLine "Downloading the UUP dump download package for $title from $($iso.downloadPackageUrl)"
