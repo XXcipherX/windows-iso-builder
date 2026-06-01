@@ -857,6 +857,33 @@ function Optimize-WindowsImage {
     Write-Log "Image cleanup complete"
 }
 
+function Assert-WindowsImageExport {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [string]$Description = $Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "$Description export was not created at $Path"
+    }
+
+    $item = Get-Item -LiteralPath $Path
+    if ($item.Length -le 0) {
+        throw "$Description export is empty: $Path"
+    }
+
+    try {
+        Get-WindowsImage -ImagePath $Path -ErrorAction Stop | Out-Null
+    }
+    catch {
+        throw "$Description export is not readable: $_"
+    }
+
+    Write-Log "$Description export verified: $Path"
+}
+
 function Dismount-AndExport {
     Write-Log "Dismounting install.wim..."
     try {
@@ -882,8 +909,10 @@ function Dismount-AndExport {
             '/Export-Image', "/SourceImageFile:$wimFilePath", "/SourceIndex:$exportIndex",
             "/DestinationImageFile:$tempImg", '/Compress:recovery'
         ) -Action 'DISM ESD export' | Out-Null
+
+        Assert-WindowsImageExport -Path $tempImg -Description 'Install.esd'
         
-        Remove-Item -Path $wimFilePath -Force
+        Remove-Item -LiteralPath $wimFilePath -Force
         Write-Log "Install.esd export complete"
     }
     else {
@@ -893,9 +922,11 @@ function Dismount-AndExport {
             '/Export-Image', "/SourceImageFile:$wimFilePath", "/SourceIndex:$exportIndex",
             "/DestinationImageFile:$tempImg", '/Compress:max'
         ) -Action 'DISM WIM export' | Out-Null
-        
-        Remove-Item -Path $wimFilePath -Force
-        Rename-Item -Path $tempImg -NewName "install.wim"
+
+        Assert-WindowsImageExport -Path $tempImg -Description 'Install.wim'
+
+        Remove-Item -LiteralPath $wimFilePath -Force
+        Rename-Item -LiteralPath $tempImg -NewName "install.wim"
         Write-Log "Install.wim export complete"
     }
 }
