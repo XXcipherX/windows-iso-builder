@@ -87,7 +87,7 @@ function Emit-ProgressBucket([int]$pct) {
 
 function Process-ProgressLine([string]$line) {
   $pct = Get-PercentFromText $line
-  if ($pct -eq $null) { return $false }
+  if ($null -eq $pct) { return $false }
   if ($script:DismLastBucket -ge 0 -and $pct -lt $script:DismLastBucket) { Reset-ProgressSession }
   [void](Emit-ProgressBucket $pct)
   return $true
