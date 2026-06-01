@@ -862,11 +862,13 @@ function Dismount-AndExport {
         }
     }
     
+    $exportIndex = $script:INDEX
+
     if ($ESD) {
         Write-Log "Exporting image as ESD with maximum compression (this may take 15-20 minutes)..."
         $tempImg = "$tiny11Dir\sources\install.esd"
         Invoke-NativeChecked -FilePath 'Dism.exe' -Arguments @(
-            '/Export-Image', "/SourceImageFile:$wimFilePath", "/SourceIndex:$INDEX",
+            '/Export-Image', "/SourceImageFile:$wimFilePath", "/SourceIndex:$exportIndex",
             "/DestinationImageFile:$tempImg", '/Compress:recovery'
         ) -Action 'DISM ESD export' | Out-Null
         
@@ -877,7 +879,7 @@ function Dismount-AndExport {
         Write-Log "Exporting image as WIM with maximum compression (this may take 1-2 minutes)..."
         $tempImg = "$tiny11Dir\sources\install2.wim"
         Invoke-NativeChecked -FilePath 'Dism.exe' -Arguments @(
-            '/Export-Image', "/SourceImageFile:$wimFilePath", "/SourceIndex:$INDEX",
+            '/Export-Image', "/SourceImageFile:$wimFilePath", "/SourceIndex:$exportIndex",
             "/DestinationImageFile:$tempImg", '/Compress:max'
         ) -Action 'DISM WIM export' | Out-Null
         
