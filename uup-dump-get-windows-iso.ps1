@@ -361,43 +361,47 @@ function Get-WindowsIso($name, $destinationDirectory) {
   Set-Content -Encoding ascii -Path $buildDirectory/ConvertConfig.ini -Value $convertConfig
 
   Write-CleanLine "Creating the $title iso file inside the $buildDirectory directory"
+  $downloadExitCode = $null
   Push-Location $buildDirectory
+  try {
+    # Patch aria2 flags in the batch before running it
+    Patch-Aria2-Flags -CmdPath (Join-Path $buildDirectory 'uup_download_windows.cmd')
 
-  # Patch aria2 flags in the batch before running it
-  Patch-Aria2-Flags -CmdPath (Join-Path $buildDirectory 'uup_download_windows.cmd')
+    # Raw log path
+    $rawLogDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
+    $rawLog = Join-Path $rawLogDir "uup_dism_aria2_raw.log"
 
-  # Raw log path
-  $rawLogDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
-  $rawLog = Join-Path $rawLogDir "uup_dism_aria2_raw.log"
-
-  & {
-    powershell cmd /c uup_download_windows.cmd 2>&1 |
-      Tee-Object -FilePath $rawLog |
-      ForEach-Object {
-        $raw = [string]$_
-        if ([string]::IsNullOrEmpty($raw)) { return }
-        foreach ($crChunk in ($raw -split "`r")) {
-          foreach ($line in ($crChunk -split "`n")) {
-            if ($line -eq $null) { continue }
-            # DISM progress buckets; aria2 is not parsed here
-            if (-not (Process-ProgressLine $line)) {
-              if ($line -match '^\s*(Mounting image|Saving image|Applying image|Exporting image|Unmounting image|Deployment Image Servicing and Management tool|=== )') {
-                Reset-ProgressSession
+    & {
+      powershell cmd /c uup_download_windows.cmd 2>&1 |
+        Tee-Object -FilePath $rawLog |
+        ForEach-Object {
+          $raw = [string]$_
+          if ([string]::IsNullOrEmpty($raw)) { return }
+          foreach ($crChunk in ($raw -split "`r")) {
+            foreach ($line in ($crChunk -split "`n")) {
+              if ($line -eq $null) { continue }
+              # DISM progress buckets; aria2 is not parsed here
+              if (-not (Process-ProgressLine $line)) {
+                if ($line -match '^\s*(Mounting image|Saving image|Applying image|Exporting image|Unmounting image|Deployment Image Servicing and Management tool|=== )') {
+                  Reset-ProgressSession
+                }
+                Write-CleanLine $line
               }
-              Write-CleanLine $line
             }
           }
         }
-      }
+    }
+    $downloadExitCode = $LASTEXITCODE
+  }
+  finally {
+    Pop-Location
   }
 
-  if ($LASTEXITCODE) {
+  if ($downloadExitCode) {
     Write-Host "::warning title=Build failed::Dumping last 1500 raw log lines"
     Get-Content $rawLog -Tail 1500 | Write-Host
-    throw "uup_download_windows.cmd failed with exit code $LASTEXITCODE"
+    throw "uup_download_windows.cmd failed with exit code $downloadExitCode"
   }
-
-  Pop-Location
 
   $isoFiles = @(Resolve-Path "$buildDirectory/*.iso" -ErrorAction SilentlyContinue)
   if ($isoFiles.Count -eq 0) { throw "No ISO file found in $buildDirectory after build" }
