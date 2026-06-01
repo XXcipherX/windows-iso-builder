@@ -226,6 +226,8 @@ jobs:
 
       - name: Build Windows ISO (UUP dump)
         shell: pwsh
+        env:
+          BUILD_REVISION: ${{ inputs.revision }}
         run: |
           $splat = @{
             windowsTargetName    = '${{ steps.map.outputs.version }}'
@@ -242,8 +244,8 @@ jobs:
             $splat.SkipChecksum = $true
           }
 
-          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
-            $splat.revision = '${{ inputs.revision }}'
+          if (-not [string]::IsNullOrWhiteSpace($env:BUILD_REVISION)) {
+            $splat.revision = $env:BUILD_REVISION
           }
 
           .\uup-dump-get-windows-iso.ps1 @splat
@@ -407,6 +409,8 @@ jobs:
 
       - name: Build summary
         shell: pwsh
+        env:
+          BUILD_REVISION: ${{ inputs.revision }}
         run: |
           $iso = Get-Content (Resolve-Path c:/output/*.json) | ConvertFrom-Json
           $artifactUrl = '${{ steps.upload_iso_artifact.outputs.artifact-url }}'
@@ -423,8 +427,8 @@ jobs:
           if ('${{ inputs.netfx3 }}' -eq 'true') {
             $buildOptions += 'Add .NET Framework 3.5'
           }
-          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
-            $buildOptions += "Revision: ${{ inputs.revision }}"
+          if (-not [string]::IsNullOrWhiteSpace($env:BUILD_REVISION)) {
+            $buildOptions += "Revision: $env:BUILD_REVISION"
           }
 
           if ($buildOptions.Count -gt 0) {
