@@ -313,7 +313,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
   $selectedInfo = "id=$($iso.id); build=$($iso.build); ring=$selectedRing; title=$($iso.title)"
   Write-CleanLine "Selected UUP candidate: $selectedInfo"
 
-  if (!$preview) {
+  if (-not $preview) {
     if ($iso.title -match '(?i)version\s*([0-9A-Za-z\.\-]+)') {
       $verbuild = $matches[1]
     } else {
