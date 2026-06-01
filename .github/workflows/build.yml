@@ -421,8 +421,12 @@ jobs:
 
           $optsRow = $null
           $buildOptions = @()
-          if ('${{ steps.map.outputs.uup_esd }}' -eq 'true') {
-            $buildOptions += 'Use ESD compression'
+          if ('${{ inputs.esd }}' -eq 'true') {
+            if ('${{ inputs.tiny11 }}' -eq 'true') {
+              $buildOptions += 'Use ESD compression (Tiny11 final image)'
+            } else {
+              $buildOptions += 'Use ESD compression'
+            }
           }
           if ('${{ inputs.netfx3 }}' -eq 'true') {
             $buildOptions += 'Add .NET Framework 3.5'
