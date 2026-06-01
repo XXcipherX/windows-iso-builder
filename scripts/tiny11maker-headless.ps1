@@ -356,8 +356,7 @@ function Get-ImageMetadata {
     
     foreach ($line in $lines) {
         if ($line -like '*Architecture : *') {
-            $imageArch = ($line -replace 'Architecture : ', '').Trim()
-            Write-Log "Architecture: $imageArch"
+            Write-Log "Architecture: $(($line -replace 'Architecture : ', '').Trim())"
             break
         }
     }
