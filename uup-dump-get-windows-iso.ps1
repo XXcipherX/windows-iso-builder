@@ -140,6 +140,9 @@ function Get-TargetSearch([string]$targetName, [hashtable]$target) {
   else {
     $requestedRevision = $revision.Trim()
     if ($requestedRevision -match '^\d+\.\d+$') {
+      if ($target.ContainsKey('baseBuild') -and $requestedRevision -notlike "$($target.baseBuild).*") {
+        throw "Build '$requestedRevision' does not match target '$targetName'. Expected $($target.baseBuild).*."
+      }
       $buildSearch = $requestedRevision
     }
     elseif ($requestedRevision -match '^\d+$' -and $target.ContainsKey('baseBuild')) {

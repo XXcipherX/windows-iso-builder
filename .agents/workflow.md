@@ -12,7 +12,7 @@ Main inputs:
 - `versions`: Windows target; options are `Windows 11 25H2`, `Windows 11 Beta`, `Windows 11 26H1`, `Windows 11 Experimental`, and `Windows 11 Future Platforms`; default `Windows 11 25H2`.
 - `edition`: `Pro` or `Home`; default `Pro`.
 - `language`: one of the supported UI language labels; default `English (United States)`.
-- `revision`: optional full build number such as `26300.8553`. Fixed branches also accept a numeric suffix; Future Platforms requires a full build number.
+- `revision`: optional full build number matching the selected target, such as `26300.8553` for Experimental. Fixed branches also accept a numeric suffix; Future Platforms requires a full build number.
 - `esd`: request ESD compression; default `false`.
 - `netfx3`: include .NET Framework 3.5; default `false`.
 - `tiny11`: run Tiny11 optimization; default `true`.

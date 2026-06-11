@@ -37,7 +37,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 | **Architecture** | x64, arm64 | x64 |
 | **Edition** | Pro, Home | Pro |
 | **Language** | 38 languages (ar-sa → zh-tw) | English (United States) |
-| **Revision** | Optional full build number, for example `26300.8553` | — |
+| **Revision** | Optional build matching the selected version, for example `26300.8553` | — |
 
 ### Build Options
 
@@ -93,7 +93,7 @@ Supported target keys:
 | `win11-experimental` | `26300.*` | WIF |
 | `win11-future-platforms` | Latest future platform build | Canary |
 
-Use `-revision` with a full build number, such as `-revision 26300.8553`. For fixed branches, a suffix such as `-revision 8553` is also accepted. Future Platforms requires the full build number because its major build changes over time.
+Use `-revision` with a full build number matching the selected target, such as `-revision 26300.8553` for Experimental. For fixed branches, a suffix such as `-revision 8553` is also accepted. Future Platforms requires the full build number because its major build changes over time.
 
 ### Optimize existing ISO (Tiny11)
 
