@@ -46,6 +46,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 | **ESD** | Use ESD compression | false |
 | **NetFx3** | Add .NET Framework 3.5 | false |
 | **Tiny11** | Apply Tiny11 optimization | **true** |
+| **Low Latency Profile** | Enable feature flag 58989092 when supported and not already enabled by the image | **true** |
 
 ---
 
@@ -62,6 +63,7 @@ When enabled, the built ISO is processed through Tiny11 which:
 
 ### Registry Optimizations
 - TPM 2.0 / Secure Boot / CPU / RAM requirement bypass
+- Windows Low Latency Profile feature flag 58989092 enabled when supported and not already enabled by the image
 - All telemetry endpoints disabled
 - Sponsored apps and consumer features blocked
 - OneDrive backup prompts disabled
@@ -106,6 +108,9 @@ Use `-revision` with a full build number matching the selected target, such as `
 
 # With custom output path
 .\scripts\tiny11maker-headless.ps1 -ISOPath "C:\path\to\windows.iso" -INDEX 1 -OutputPath "C:\output\optimized.iso"
+
+# Enable Windows Low Latency Profile feature flag 58989092
+.\scripts\tiny11maker-headless.ps1 -ISOPath "C:\path\to\windows.iso" -INDEX 1 -EnableLowLatencyProfile
 ```
 
 ---

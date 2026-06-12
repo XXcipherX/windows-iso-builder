@@ -19,6 +19,9 @@
 .PARAMETER SkipCleanup
     Skip cleanup of temporary files after ISO creation (optional, for debugging)
 
+.PARAMETER EnableLowLatencyProfile
+    Enable Windows Low Latency Profile feature flag 58989092
+
 .EXAMPLE
     .\tiny11maker-headless.ps1 -ISO E -INDEX 1
     .\tiny11maker-headless.ps1 -ISO E -INDEX 6 -SCRATCH D
@@ -58,7 +61,10 @@ param (
     [switch]$SkipCleanup,
     
     [Parameter(Mandatory = $false, HelpMessage = "Export as install.esd (maximum compression)")]
-    [switch]$ESD
+    [switch]$ESD,
+
+    [Parameter(Mandatory = $false, HelpMessage = "Enable Windows Low Latency Profile feature flag 58989092")]
+    [switch]$EnableLowLatencyProfile
 )
 
 #---------[ Error Handling ]---------#
@@ -141,6 +147,79 @@ function Set-RegistryValue {
         Write-Log "Failed to set registry $path\$name (exit code $exitCode).$details" "ERROR"
         throw "reg add failed with exit code $exitCode for $path\$name"
     }
+}
+
+function Enable-LowLatencyProfileFeature {
+    Write-Log "Enabling Windows Low Latency Profile feature flag 58989092..."
+
+    # Equivalent to:
+    # ViVeTool.exe /enable /id:58989092
+    #
+    # Verified on Windows 11 25H2 build 26200.8655:
+    # Feature ID:    58989092
+    # Obfuscated ID: 1213986446
+    # Priority:      User (8)
+    # State:         Enabled (2)
+    $featureOverridePath = 'Control\FeatureManagement\Overrides\8\1213986446'
+    $featureDefinitionPath = 'Control\FeatureManagement\Definitions\Associations\1213986446'
+    $imageDefaultPath = 'Control\FeatureManagement\Overrides\0\1213986446'
+
+    $controlSets = @(
+        Get-Item 'Registry::HKEY_LOCAL_MACHINE\zSYSTEM\ControlSet*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -match '^ControlSet\d{3}$' } |
+            Select-Object -ExpandProperty PSChildName
+    )
+
+    if ($controlSets.Count -eq 0) {
+        Write-Log "No ControlSetXXX keys found in offline SYSTEM hive; falling back to ControlSet001." "WARN"
+        $controlSets = @('ControlSet001')
+    }
+
+    $appliedCount = 0
+    $alreadyEnabledCount = 0
+    $missingDefinitionCount = 0
+
+    foreach ($controlSet in $controlSets) {
+        $providerRoot = "Registry::HKEY_LOCAL_MACHINE\zSYSTEM\$controlSet"
+        $definitionRegistryPath = "$providerRoot\$featureDefinitionPath"
+
+        if (-not (Test-Path -LiteralPath $definitionRegistryPath)) {
+            Write-Log "Low Latency Profile feature definition not found in $controlSet; skipping override." "WARN"
+            $missingDefinitionCount++
+            continue
+        }
+
+        $imageDefaultRegistryPath = "$providerRoot\$imageDefaultPath"
+        if (Test-Path -LiteralPath $imageDefaultRegistryPath) {
+            try {
+                $imageDefaultState = (
+                    Get-ItemProperty -LiteralPath $imageDefaultRegistryPath -Name 'EnabledState' -ErrorAction Stop
+                ).EnabledState
+
+                if ([int]$imageDefaultState -eq 2) {
+                    Write-Log "Low Latency Profile is already enabled by the image default in $controlSet; no override required."
+                    $alreadyEnabledCount++
+                    continue
+                }
+            }
+            catch {
+                Write-Log "Could not read Low Latency Profile image default in ${controlSet}: $_. Applying the user override." "WARN"
+            }
+        }
+
+        $path = "HKLM\zSYSTEM\$controlSet\$featureOverridePath"
+
+        Set-RegistryValue $path 'EnabledState' 'REG_DWORD' '2'
+        Set-RegistryValue $path 'EnabledStateOptions' 'REG_DWORD' '0'
+        Set-RegistryValue $path 'Variant' 'REG_DWORD' '0'
+        Set-RegistryValue $path 'VariantPayload' 'REG_DWORD' '0'
+        Set-RegistryValue $path 'VariantPayloadKind' 'REG_DWORD' '0'
+
+        Write-Log "Low Latency Profile override applied to $controlSet"
+        $appliedCount++
+    }
+
+    Write-Log "Low Latency Profile processing complete (overrides applied: $appliedCount, already enabled: $alreadyEnabledCount, definitions missing: $missingDefinitionCount)"
 }
 
 function Remove-RegistryValue {
@@ -653,6 +732,11 @@ function Set-RegistryTweaks {
     
     # Prevent new Outlook installation
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Mail' 'PreventRun' 'REG_DWORD' '1'
+
+    # Enable Windows Low Latency Profile
+    if ($EnableLowLatencyProfile) {
+        Enable-LowLatencyProfileFeature
+    }
     
     Write-Log "Registry tweaks applied"
 }
