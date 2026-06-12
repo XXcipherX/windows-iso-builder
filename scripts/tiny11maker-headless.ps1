@@ -176,7 +176,7 @@ function Enable-LowLatencyProfileFeature {
     }
 
     $appliedCount = 0
-    $alreadyEnabledCount = 0
+    $imageDefaultEnabledCount = 0
     $missingDefinitionCount = 0
 
     foreach ($controlSet in $controlSets) {
@@ -197,14 +197,19 @@ function Enable-LowLatencyProfileFeature {
                 ).EnabledState
 
                 if ([int]$imageDefaultState -eq 2) {
-                    Write-Log "Low Latency Profile is already enabled by the image default in $controlSet; no override required."
-                    $alreadyEnabledCount++
-                    continue
+                    Write-Log "Low Latency Profile is enabled by the image default in $controlSet; reinforcing it with the User (8) override."
+                    $imageDefaultEnabledCount++
+                }
+                else {
+                    Write-Log "Low Latency Profile image default is state $imageDefaultState in $controlSet; applying the User (8) override."
                 }
             }
             catch {
                 Write-Log "Could not read Low Latency Profile image default in ${controlSet}: $_. Applying the user override." "WARN"
             }
+        }
+        else {
+            Write-Log "Low Latency Profile image default is absent in $controlSet; applying the User (8) override."
         }
 
         $path = "HKLM\zSYSTEM\$controlSet\$featureOverridePath"
@@ -219,7 +224,7 @@ function Enable-LowLatencyProfileFeature {
         $appliedCount++
     }
 
-    Write-Log "Low Latency Profile processing complete (overrides applied: $appliedCount, already enabled: $alreadyEnabledCount, definitions missing: $missingDefinitionCount)"
+    Write-Log "Low Latency Profile processing complete (User overrides applied: $appliedCount, image defaults enabled: $imageDefaultEnabledCount, definitions missing: $missingDefinitionCount)"
 }
 
 function Remove-RegistryValue {
