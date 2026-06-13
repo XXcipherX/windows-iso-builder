@@ -16,7 +16,7 @@ Main inputs:
 - `esd`: request ESD compression; default `false`.
 - `netfx3`: include .NET Framework 3.5; default `false`.
 - `tiny11`: run Tiny11 optimization; default `true`.
-- `low_latency_profile`: enforce Windows Low Latency Profile feature flag `58989092` with a User (8) override during Tiny11 optimization whenever its definition exists; default `true`.
+- `low_latency_profile`: apply and verify the Windows Low Latency Profile feature flag `58989092` User (8) override during Tiny11 optimization; default `true`.
 
 ## Runner selection
 

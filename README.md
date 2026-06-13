@@ -46,7 +46,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 | **ESD** | Use ESD compression | false |
 | **NetFx3** | Add .NET Framework 3.5 | false |
 | **Tiny11** | Apply Tiny11 optimization | **true** |
-| **Low Latency Profile** | Enforce feature flag 58989092 with a User (8) override when supported | **true** |
+| **Low Latency Profile** | Apply and verify feature flag 58989092 with a User (8) override | **true** |
 
 ---
 
@@ -63,7 +63,7 @@ When enabled, the built ISO is processed through Tiny11 which:
 
 ### Registry Optimizations
 - TPM 2.0 / Secure Boot / CPU / RAM requirement bypass
-- Windows Low Latency Profile feature flag 58989092 enforced with a User (8) override when supported
+- Windows Low Latency Profile feature flag 58989092 User (8) override applied and verified
 - All telemetry endpoints disabled
 - Sponsored apps and consumer features blocked
 - OneDrive backup prompts disabled
