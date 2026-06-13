@@ -18,6 +18,9 @@ pwsh .\uup-dump-get-windows-iso.ps1 `
 Notes:
 
 - `windowsTargetName` must match one of the target keys in `uup-dump-get-windows-iso.ps1`.
+- Current target keys are `win11-25h2`, `win11-beta`, `win11-26h1`, `win11-experimental`, and `win11-future-platforms`.
+- `-revision` accepts a full build number matching the selected target, such as `26300.8553` for Experimental. Fixed branches also accept a numeric suffix; Future Platforms requires a full build number.
+- Deprecated aliases `win11-25h2-beta`, `win11-dev`, and `win11-canary` remain accepted for local compatibility.
 - The script downloads data from UUP dump and generated download scripts.
 - It may install `aria2` through Chocolatey in the GitHub Actions path.
 - `DISM_PROGRESS_STEP` can adjust normalized DISM progress buckets.
@@ -51,6 +54,8 @@ pwsh .\scripts\tiny11maker-headless.ps1 `
 ```
 
 Add `-ESD` to export `install.esd` instead of `install.wim`.
+
+Add `-EnableLowLatencyProfile` to write the Windows Low Latency Profile feature flag `58989092` User (8) override into each supported offline `ControlSetXXX`. The script records the image-default state for diagnostics, but always writes the override when the feature definition exists.
 
 ## Lightweight validation
 

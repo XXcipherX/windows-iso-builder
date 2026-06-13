@@ -15,6 +15,7 @@ run-name: >
   ${{ inputs.esd && 'ESD' || '' }}
   ${{ inputs.netfx3 && 'NETFX3' || '' }}
   ${{ inputs.tiny11 && 'TINY11' || '' }}
+  ${{ inputs.tiny11 && inputs.low_latency_profile && 'LLP' || '' }}
 
 on:
   workflow_dispatch:
@@ -30,10 +31,10 @@ on:
         type: choice
         options:
           - Windows 11 25H2
-          - Windows 11 25H2 BETA
+          - Windows 11 Beta
           - Windows 11 26H1
-          - Windows DEV
-          - Windows CANARY
+          - Windows 11 Experimental
+          - Windows 11 Future Platforms
         default: Windows 11 25H2
         required: true
       edition:
@@ -87,7 +88,7 @@ on:
         default: English (United States)
         required: true
       revision:
-        description: "Revision number (optional)"
+        description: "Build matching selected version, e.g. 26300.8553 (optional)"
         type: string
         required: false
       esd:
@@ -102,6 +103,11 @@ on:
         default: false
       tiny11:
         description: "Apply Tiny11 optimization (debloat, registry tweaks, system requirements bypass)"
+        type: boolean
+        required: true
+        default: true
+      low_latency_profile:
+        description: "Enable Low Latency Profile feature flag 58989092"
         type: boolean
         required: true
         default: true
@@ -163,11 +169,11 @@ jobs:
           }
 
           $verMap = @{
-            'Windows 11 25H2'      = 'win11-25h2'
-            'Windows 11 25H2 BETA' = 'win11-25h2-beta'
-            'Windows 11 26H1'      = 'win11-26h1'
-            'Windows DEV'          = 'win11-dev'
-            'Windows CANARY'       = 'win11-canary'
+            'Windows 11 25H2'             = 'win11-25h2'
+            'Windows 11 Beta'             = 'win11-beta'
+            'Windows 11 26H1'             = 'win11-26h1'
+            'Windows 11 Experimental'     = 'win11-experimental'
+            'Windows 11 Future Platforms' = 'win11-future-platforms'
           }
 
           $langCode = $langMap['${{ inputs.language }}']
@@ -287,6 +293,9 @@ jobs:
             INDEX   = 1
           }
           if ('${{ inputs.esd }}' -eq 'true') { $splat.ESD = $true }
+          if ('${{ inputs.low_latency_profile }}' -eq 'true') {
+            $splat.EnableLowLatencyProfile = $true
+          }
 
           # INDEX=1: UUP dump builds a single-edition ISO, so the WIM always has index 1
           .\scripts\tiny11maker-headless.ps1 @splat
@@ -422,6 +431,9 @@ jobs:
           }
           if ('${{ inputs.netfx3 }}' -eq 'true') {
             $buildOptions += 'Add .NET Framework 3.5'
+          }
+          if ('${{ inputs.tiny11 }}' -eq 'true' -and '${{ inputs.low_latency_profile }}' -eq 'true') {
+            $buildOptions += 'Enable Low Latency Profile 58989092'
           }
           if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
             $buildOptions += "Revision: ${{ inputs.revision }}"

@@ -33,11 +33,11 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 
 | Input | Options | Default |
 |-------|---------|---------|
-| **Version** | Windows 11 25H2/25H2 BETA/26H1, DEV, CANARY | Windows 11 25H2 |
+| **Version** | Windows 11 25H2, Beta, 26H1, Experimental, Future Platforms | Windows 11 25H2 |
 | **Architecture** | x64, arm64 | x64 |
 | **Edition** | Pro, Home | Pro |
 | **Language** | 38 languages (ar-sa → zh-tw) | English (United States) |
-| **Revision** | Optional build revision number | — |
+| **Revision** | Optional build matching the selected version, for example `26300.8553` | — |
 
 ### Build Options
 
@@ -46,6 +46,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 | **ESD** | Use ESD compression | false |
 | **NetFx3** | Add .NET Framework 3.5 | false |
 | **Tiny11** | Apply Tiny11 optimization | **true** |
+| **Low Latency Profile** | Enforce feature flag 58989092 with a User (8) override when supported | **true** |
 
 ---
 
@@ -62,6 +63,7 @@ When enabled, the built ISO is processed through Tiny11 which:
 
 ### Registry Optimizations
 - TPM 2.0 / Secure Boot / CPU / RAM requirement bypass
+- Windows Low Latency Profile feature flag 58989092 enforced with a User (8) override when supported
 - All telemetry endpoints disabled
 - Sponsored apps and consumer features blocked
 - OneDrive backup prompts disabled
@@ -83,6 +85,18 @@ When enabled, the built ISO is processed through Tiny11 which:
 pwsh uup-dump-get-windows-iso.ps1 win11-25h2 c:/output -architecture x64 -edition pro -lang en-us -esd -netfx3
 ```
 
+Supported target keys:
+
+| Target | UUP branch | Current UUP ring |
+|--------|------------|------------------|
+| `win11-25h2` | `26200.*` | Retail |
+| `win11-beta` | `26220.*` | WIS |
+| `win11-26h1` | `28000.*` | Retail |
+| `win11-experimental` | `26300.*` | WIF |
+| `win11-future-platforms` | Latest future platform build | Canary |
+
+Use `-revision` with a full build number matching the selected target, such as `-revision 26300.8553` for Experimental. For fixed branches, a suffix such as `-revision 8553` is also accepted. Future Platforms requires the full build number because its major build changes over time.
+
 ### Optimize existing ISO (Tiny11)
 
 ```powershell
@@ -94,6 +108,9 @@ pwsh uup-dump-get-windows-iso.ps1 win11-25h2 c:/output -architecture x64 -editio
 
 # With custom output path
 .\scripts\tiny11maker-headless.ps1 -ISOPath "C:\path\to\windows.iso" -INDEX 1 -OutputPath "C:\output\optimized.iso"
+
+# Enable Windows Low Latency Profile feature flag 58989092
+.\scripts\tiny11maker-headless.ps1 -ISOPath "C:\path\to\windows.iso" -INDEX 1 -EnableLowLatencyProfile
 ```
 
 ---

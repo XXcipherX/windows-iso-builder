@@ -105,23 +105,67 @@ function Get-EditionName($e) {
   }
 }
 
-$dotSystemRevision = if ([string]::IsNullOrWhiteSpace($revision)) { '' } else { ".$revision" }
-$systemRevision = if ([string]::IsNullOrWhiteSpace($revision)) { '' } else { " $revision" }
-
 $TARGETS = @{
-  "win11-25h2"      = @{ search="windows 11 26200$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "win11-25h2-beta" = @{ search="windows 11 26220$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Wif"; allowedRings=@("Wif","Wis","Beta"); displayVersion="25H2 BETA" }
-  "win11-26h1"      = @{ search="windows 11 28000$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "win11-dev"       = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Dev"; allowedRings=@("Dev","Wif","Wis"); displayVersion="25H2 DEV" }
-  "win11-canary"    = @{ search="windows 11$systemRevision $arch"; edition=(Get-EditionName $edition); ring="Canary"; allowedRings=@("Canary"); displayVersion="CANARY" }
+  "win11-25h2"             = @{ baseBuild="26200"; edition=(Get-EditionName $edition) }
+  "win11-beta"             = @{ baseBuild="26220"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wis","Beta"); displayVersion="BETA" }
+  "win11-26h1"             = @{ baseBuild="28000"; edition=(Get-EditionName $edition) }
+  "win11-experimental"     = @{ baseBuild="26300"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wif","Experimental"); displayVersion="EXPERIMENTAL" }
+  "win11-future-platforms" = @{ edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Canary","FuturePlatforms","Future Platforms"); displayVersion="FUTURE PLATFORMS" }
+}
+
+$TARGET_ALIASES = @{
+  "win11-25h2-beta" = "win11-beta"
+  "win11-dev"       = "win11-experimental"
+  "win11-canary"    = "win11-future-platforms"
+}
+
+if ($TARGET_ALIASES.ContainsKey($windowsTargetName)) {
+  $replacementTarget = $TARGET_ALIASES[$windowsTargetName]
+  Write-CleanLine "WARN: Windows target '$windowsTargetName' is deprecated; using '$replacementTarget'."
+  $windowsTargetName = $replacementTarget
 }
 
 if (-not $TARGETS.ContainsKey($windowsTargetName)) {
   throw "Unsupported Windows target '$windowsTargetName'. Valid targets: $(@($TARGETS.Keys | Sort-Object) -join ', ')"
 }
 
+function Get-TargetSearch([string]$targetName, [hashtable]$target) {
+  $buildSearch = $null
+
+  if ([string]::IsNullOrWhiteSpace($revision)) {
+    if ($target.ContainsKey('baseBuild')) {
+      $buildSearch = [string]$target.baseBuild
+    }
+  }
+  else {
+    $requestedRevision = $revision.Trim()
+    if ($requestedRevision -match '^\d+\.\d+$') {
+      if ($target.ContainsKey('baseBuild') -and $requestedRevision -notlike "$($target.baseBuild).*") {
+        throw "Build '$requestedRevision' does not match target '$targetName'. Expected $($target.baseBuild).*."
+      }
+      $buildSearch = $requestedRevision
+    }
+    elseif ($requestedRevision -match '^\d+$' -and $target.ContainsKey('baseBuild')) {
+      $buildSearch = "$($target.baseBuild).$requestedRevision"
+    }
+    elseif ($requestedRevision -match '^\d+$') {
+      throw "Target '$targetName' requires a full build number such as 29599.1000."
+    }
+    else {
+      throw "Invalid revision '$revision'. Use a full build number such as 26300.8553, or a numeric suffix for a fixed branch."
+    }
+  }
+
+  if ($buildSearch) {
+    return "windows 11 $buildSearch $arch"
+  }
+
+  return "windows 11 $arch"
+}
+
 $currentTarget = $TARGETS[$windowsTargetName]
-if ($currentTarget.ContainsKey('ring')) {
+$currentTarget.search = Get-TargetSearch $windowsTargetName $currentTarget
+if ($currentTarget.ContainsKey('preview') -and $currentTarget.preview) {
   $preview = $true
 }
 
@@ -181,6 +225,11 @@ function Get-UupDumpIso($name, $target) {
 
   foreach ($candidate in $candidateBuilds) {
     $id = $candidate.Value.uuid
+    if ($candidate.Value.title -match '(?i)\.NET Framework') {
+      Write-CleanLine "Skipping candidate ${id}: .NET Framework update is not a Windows image."
+      continue
+    }
+
     $uupDumpUrl = 'https://uupdump.net/selectlang.php?' + (New-QueryString @{ id = $id })
     Write-CleanLine "Checking $name candidate $id ($uupDumpUrl)"
 
