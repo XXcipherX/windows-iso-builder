@@ -107,7 +107,7 @@ on:
         required: true
         default: true
       low_latency_profile:
-        description: "Enable Low Latency Profile feature flag 58989092"
+        description: "Apply and verify Low Latency Profile 58989092 User override"
         type: boolean
         required: true
         default: true

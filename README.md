@@ -109,7 +109,7 @@ Use `-revision` with a full build number matching the selected target, such as `
 # With custom output path
 .\scripts\tiny11maker-headless.ps1 -ISOPath "C:\path\to\windows.iso" -INDEX 1 -OutputPath "C:\output\optimized.iso"
 
-# Enable Windows Low Latency Profile feature flag 58989092
+# Apply and verify the Windows Low Latency Profile feature flag 58989092 User override
 .\scripts\tiny11maker-headless.ps1 -ISOPath "C:\path\to\windows.iso" -INDEX 1 -EnableLowLatencyProfile
 ```
 

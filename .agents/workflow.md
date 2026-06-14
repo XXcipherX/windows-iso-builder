@@ -35,7 +35,7 @@ The workflow chooses the runner from the architecture:
    - UUP ESD compression is enabled only when `esd=true` and `tiny11=false`, because Tiny11 recompresses later when requested.
 3. Free disk space on the runner.
 4. Build the Windows ISO through `uup-dump-get-windows-iso.ps1`.
-5. If `tiny11=true`, copy `autounattend.xml` into `scripts/`, run `scripts/tiny11maker-headless.ps1`, optionally enforce Low Latency Profile with a User (8) override in the offline SYSTEM hive, replace the original ISO with the `_Tiny11.iso` output, and recalculate SHA256.
+5. If `tiny11=true`, copy `autounattend.xml` into `scripts/`, run `scripts/tiny11maker-headless.ps1`, optionally apply and verify the Low Latency Profile User (8) override in the offline SYSTEM hive, replace the original ISO with the `_Tiny11.iso` output, and recalculate SHA256.
 6. Generate verification instructions.
 7. Upload the ISO and checksum artifacts.
 8. Write a GitHub step summary with build details, checksum, artifact link, and UUP dump source link.

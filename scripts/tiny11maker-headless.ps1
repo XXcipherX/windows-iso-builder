@@ -20,7 +20,7 @@
     Skip cleanup of temporary files after ISO creation (optional, for debugging)
 
 .PARAMETER EnableLowLatencyProfile
-    Enable Windows Low Latency Profile feature flag 58989092
+    Apply and verify the Windows Low Latency Profile feature flag 58989092 User override
 
 .EXAMPLE
     .\tiny11maker-headless.ps1 -ISO E -INDEX 1
@@ -63,7 +63,7 @@ param (
     [Parameter(Mandatory = $false, HelpMessage = "Export as install.esd (maximum compression)")]
     [switch]$ESD,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Enable Windows Low Latency Profile feature flag 58989092")]
+    [Parameter(Mandatory = $false, HelpMessage = "Apply and verify the Windows Low Latency Profile feature flag 58989092 User override")]
     [switch]$EnableLowLatencyProfile
 )
 
@@ -756,7 +756,7 @@ function Set-RegistryTweaks {
     # Prevent new Outlook installation
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Mail' 'PreventRun' 'REG_DWORD' '1'
 
-    # Enable Windows Low Latency Profile
+    # Apply and verify the Windows Low Latency Profile User override
     if ($EnableLowLatencyProfile) {
         Enable-LowLatencyProfileFeature
     }
