@@ -107,7 +107,7 @@ on:
         required: true
         default: true
       low_latency_profile:
-        description: "Enable Low Latency Profile feature flag 58989092"
+        description: "Apply and verify Low Latency Profile 58989092 User override"
         type: boolean
         required: true
         default: true
@@ -441,7 +441,7 @@ jobs:
             $buildOptions += 'Add .NET Framework 3.5'
           }
           if ('${{ inputs.tiny11 }}' -eq 'true' -and '${{ inputs.low_latency_profile }}' -eq 'true') {
-            $buildOptions += 'Enable Low Latency Profile 58989092'
+            $buildOptions += 'Apply and verify Low Latency Profile 58989092 User override'
           }
           if (-not [string]::IsNullOrWhiteSpace($env:BUILD_REVISION)) {
             $buildOptions += "Revision: $env:BUILD_REVISION"

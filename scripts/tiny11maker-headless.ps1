@@ -20,7 +20,7 @@
     Skip cleanup of temporary files after ISO creation (optional, for debugging)
 
 .PARAMETER EnableLowLatencyProfile
-    Enable Windows Low Latency Profile feature flag 58989092
+    Apply and verify the Windows Low Latency Profile feature flag 58989092 User override
 
 .EXAMPLE
     .\tiny11maker-headless.ps1 -ISO E -INDEX 1
@@ -63,7 +63,7 @@ param (
     [Parameter(Mandatory = $false, HelpMessage = "Export as install.esd (maximum compression)")]
     [switch]$ESD,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Enable Windows Low Latency Profile feature flag 58989092")]
+    [Parameter(Mandatory = $false, HelpMessage = "Apply and verify the Windows Low Latency Profile feature flag 58989092 User override")]
     [switch]$EnableLowLatencyProfile
 )
 
@@ -150,7 +150,7 @@ function Set-RegistryValue {
 }
 
 function Enable-LowLatencyProfileFeature {
-    Write-Log "Enabling Windows Low Latency Profile feature flag 58989092..."
+    Write-Log "Applying Windows Low Latency Profile feature flag 58989092 User override..."
 
     # Equivalent to:
     # ViVeTool.exe /enable /id:58989092
@@ -171,8 +171,7 @@ function Enable-LowLatencyProfileFeature {
     )
 
     if ($controlSets.Count -eq 0) {
-        Write-Log "No ControlSetXXX keys found in offline SYSTEM hive; falling back to ControlSet001." "WARN"
-        $controlSets = @('ControlSet001')
+        throw "No ControlSetXXX keys found in offline SYSTEM hive; cannot apply Low Latency Profile override."
     }
 
     $appliedCount = 0
@@ -184,9 +183,8 @@ function Enable-LowLatencyProfileFeature {
         $definitionRegistryPath = "$providerRoot\$featureDefinitionPath"
 
         if (-not (Test-Path -LiteralPath $definitionRegistryPath)) {
-            Write-Log "Low Latency Profile feature definition not found in $controlSet; skipping override." "WARN"
+            Write-Log "Low Latency Profile feature definition not found in $controlSet; writing the User (8) override anyway." "WARN"
             $missingDefinitionCount++
-            continue
         }
 
         $imageDefaultRegistryPath = "$providerRoot\$imageDefaultPath"
@@ -212,16 +210,36 @@ function Enable-LowLatencyProfileFeature {
             Write-Log "Low Latency Profile image default is absent in $controlSet; applying the User (8) override."
         }
 
-        $path = "HKLM\zSYSTEM\$controlSet\$featureOverridePath"
+        $registryPath = "HKLM\zSYSTEM\$controlSet\$featureOverridePath"
+        $providerOverridePath = "$providerRoot\$featureOverridePath"
 
-        Set-RegistryValue $path 'EnabledState' 'REG_DWORD' '2'
-        Set-RegistryValue $path 'EnabledStateOptions' 'REG_DWORD' '0'
-        Set-RegistryValue $path 'Variant' 'REG_DWORD' '0'
-        Set-RegistryValue $path 'VariantPayload' 'REG_DWORD' '0'
-        Set-RegistryValue $path 'VariantPayloadKind' 'REG_DWORD' '0'
+        Set-RegistryValue $registryPath 'EnabledState' 'REG_DWORD' '2'
+        Set-RegistryValue $registryPath 'EnabledStateOptions' 'REG_DWORD' '0'
+        Set-RegistryValue $registryPath 'Variant' 'REG_DWORD' '0'
+        Set-RegistryValue $registryPath 'VariantPayload' 'REG_DWORD' '0'
+        Set-RegistryValue $registryPath 'VariantPayloadKind' 'REG_DWORD' '0'
 
-        Write-Log "Low Latency Profile override applied to $controlSet"
+        $expectedValues = @{
+            EnabledState       = 2
+            EnabledStateOptions = 0
+            Variant            = 0
+            VariantPayload     = 0
+            VariantPayloadKind = 0
+        }
+
+        foreach ($entry in $expectedValues.GetEnumerator()) {
+            $actualValue = Get-ItemPropertyValue -LiteralPath $providerOverridePath -Name $entry.Key -ErrorAction Stop
+            if ([int]$actualValue -ne $entry.Value) {
+                throw "Low Latency Profile override verification failed in $controlSet. $($entry.Key)=$actualValue; expected $($entry.Value)."
+            }
+        }
+
+        Write-Log "Low Latency Profile User override applied and verified in $controlSet"
         $appliedCount++
+    }
+
+    if ($appliedCount -eq 0) {
+        throw "Low Latency Profile was requested, but no User overrides were applied."
     }
 
     Write-Log "Low Latency Profile processing complete (User overrides applied: $appliedCount, image defaults enabled: $imageDefaultEnabledCount, definitions missing: $missingDefinitionCount)"
@@ -738,7 +756,7 @@ function Set-RegistryTweaks {
     # Prevent new Outlook installation
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Mail' 'PreventRun' 'REG_DWORD' '1'
 
-    # Enable Windows Low Latency Profile
+    # Apply and verify the Windows Low Latency Profile User override
     if ($EnableLowLatencyProfile) {
         Enable-LowLatencyProfileFeature
     }
