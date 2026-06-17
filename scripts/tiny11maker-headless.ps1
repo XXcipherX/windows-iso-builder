@@ -245,7 +245,13 @@ function Enable-LowLatencyProfileFeature {
     Write-Log "Low Latency Profile processing complete (User overrides applied: $appliedCount, image defaults enabled: $imageDefaultEnabledCount, definitions missing: $missingDefinitionCount)"
 }
 
-function Remove-RegistryValue {
+function Test-RegistryDeleteMissing {
+    param([string]$Output)
+
+    return $Output -match '(?i)unable to find the specified registry key or value'
+}
+
+function Remove-RegistryKey {
     param([string]$path)
 
     try {
@@ -253,21 +259,56 @@ function Remove-RegistryValue {
         $exitCode = $LASTEXITCODE
 
         if ($exitCode -eq 0) {
-            Write-Log "Removed registry: $path"
+            Write-Log "Removed registry key: $path"
         }
         else {
             $details = if ($commandOutput) { " Output: $commandOutput" } else { "" }
-            if ($commandOutput -match 'unable to find the specified registry key or value') {
-                Write-Log "Registry key or value not found: $path.$details" "WARN"
+            if (Test-RegistryDeleteMissing $commandOutput) {
+                Write-Log "Registry key not found: $path.$details" "WARN"
                 return
             }
             else {
-                Write-Log "Registry not removed: $path (exit code $exitCode).$details" "WARN"
+                Write-Log "Registry key not removed: $path (exit code $exitCode).$details" "WARN"
             }
         }
     }
     catch {
-        Write-Log "Error removing registry $path : $_" "WARN"
+        Write-Log "Error removing registry key $path : $_" "WARN"
+    }
+}
+
+function Remove-RegistryValue {
+    param([string]$path)
+
+    $lastSlash = $path.LastIndexOf('\')
+    if ($lastSlash -lt 0 -or $lastSlash -eq ($path.Length - 1)) {
+        Write-Log "Invalid registry value path: $path" "WARN"
+        return
+    }
+
+    $keyPath = $path.Substring(0, $lastSlash)
+    $valueName = $path.Substring($lastSlash + 1)
+
+    try {
+        $commandOutput = (& 'reg' 'delete' $keyPath '/v' $valueName '/f' 2>&1 | Out-String).Trim()
+        $exitCode = $LASTEXITCODE
+
+        if ($exitCode -eq 0) {
+            Write-Log "Removed registry value: $path"
+        }
+        else {
+            $details = if ($commandOutput) { " Output: $commandOutput" } else { "" }
+            if (Test-RegistryDeleteMissing $commandOutput) {
+                Write-Log "Registry value not found: $path.$details" "WARN"
+                return
+            }
+            else {
+                Write-Log "Registry value not removed: $path (exit code $exitCode).$details" "WARN"
+            }
+        }
+    }
+    catch {
+        Write-Log "Error removing registry value $path : $_" "WARN"
     }
 }
 
@@ -663,8 +704,8 @@ function Set-RegistryTweaks {
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\MRT' 'DontOfferThroughWUAU' 'REG_DWORD' '1'
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' 'DODownloadMode' 'REG_DWORD' '0'
     
-    Remove-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\Subscriptions'
-    Remove-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\SuggestedApps'
+    Remove-RegistryKey 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\Subscriptions'
+    Remove-RegistryKey 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\SuggestedApps'
     
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableConsumerAccountStateContent' 'REG_DWORD' '1'
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableCloudOptimizedContent' 'REG_DWORD' '1'
@@ -705,10 +746,10 @@ function Set-RegistryTweaks {
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Dsh' 'AllowNewsAndInterests' 'REG_DWORD' '0'
     
     # Remove Edge registries
-    Remove-RegistryValue "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge"
-    Remove-RegistryValue "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Update"
-    Remove-RegistryValue "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge"
-    Remove-RegistryValue "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Update"
+    Remove-RegistryKey "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge"
+    Remove-RegistryKey "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Update"
+    Remove-RegistryKey "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge"
+    Remove-RegistryKey "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Update"
     
     # Disable OneDrive folder backup
     Set-RegistryValue "HKLM\zSOFTWARE\Policies\Microsoft\Windows\OneDrive" "DisableFileSyncNGSC" "REG_DWORD" "1"
@@ -732,8 +773,8 @@ function Set-RegistryTweaks {
     Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Orchestrator\UScheduler_Oobe\OutlookUpdate' 'workCompleted' 'REG_DWORD' '1'
     Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Orchestrator\UScheduler\OutlookUpdate' 'workCompleted' 'REG_DWORD' '1'
     Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Orchestrator\UScheduler\DevHomeUpdate' 'workCompleted' 'REG_DWORD' '1'
-    Remove-RegistryValue 'HKLM\zSOFTWARE\Microsoft\WindowsUpdate\Orchestrator\UScheduler_Oobe\OutlookUpdate'
-    Remove-RegistryValue 'HKLM\zSOFTWARE\Microsoft\WindowsUpdate\Orchestrator\UScheduler_Oobe\DevHomeUpdate'
+    Remove-RegistryKey 'HKLM\zSOFTWARE\Microsoft\WindowsUpdate\Orchestrator\UScheduler_Oobe\OutlookUpdate'
+    Remove-RegistryKey 'HKLM\zSOFTWARE\Microsoft\WindowsUpdate\Orchestrator\UScheduler_Oobe\DevHomeUpdate'
     
     # Disable Copilot
     Set-RegistryValue 'HKLM\zNTUSER\Software\Policies\Microsoft\Windows\WindowsCopilot' 'TurnOffWindowsCopilot' 'REG_DWORD' '1'
