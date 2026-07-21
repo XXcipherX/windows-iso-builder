@@ -723,8 +723,7 @@ function Remove-NonEssentialServices {
     # This preserves maximum compatibility while removing privacy/performance drains
     $servicesToDisable = @(
         'DiagTrack',           # Connected User Experiences and Telemetry
-        'WerSvc',              # Windows Error Reporting
-        'SysMain'              # Superfetch (not needed on SSDs)
+        'WerSvc'               # Windows Error Reporting
     )
     
     $disabledCount = 0
