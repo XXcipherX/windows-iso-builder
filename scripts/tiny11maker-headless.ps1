@@ -149,6 +149,23 @@ function Set-RegistryValue {
     }
 }
 
+function Get-OfflineCurrentControlSet {
+    $selectPath = 'Registry::HKEY_LOCAL_MACHINE\zSYSTEM\Select'
+    $current = Get-ItemPropertyValue -LiteralPath $selectPath -Name 'Current' -ErrorAction Stop
+
+    if ([int]$current -lt 1 -or [int]$current -gt 999) {
+        throw "Offline SYSTEM hive contains an invalid Select\Current value: $current"
+    }
+
+    $controlSet = 'ControlSet{0:D3}' -f [int]$current
+    $controlSetPath = "Registry::HKEY_LOCAL_MACHINE\zSYSTEM\$controlSet"
+    if (-not (Test-Path -LiteralPath $controlSetPath)) {
+        throw "Active offline control set does not exist: $controlSet"
+    }
+
+    return $controlSet
+}
+
 function Enable-LowLatencyProfileFeature {
     Write-Log "Applying Windows Low Latency Profile feature flag 58989092 User override..."
 
@@ -657,6 +674,8 @@ function Set-RegistryTweaks {
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zNTUSER', "$scratchDir\Users\Default\ntuser.dat") -Action 'Load NTUSER hive' | Out-Null
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSOFTWARE', "$scratchDir\Windows\System32\config\SOFTWARE") -Action 'Load SOFTWARE hive' | Out-Null
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSYSTEM', "$scratchDir\Windows\System32\config\SYSTEM") -Action 'Load SYSTEM hive' | Out-Null
+    $currentControlSet = Get-OfflineCurrentControlSet
+    Write-Log "Using active offline control set: $currentControlSet"
     
     Write-Log "Applying registry tweaks..."
     
@@ -737,7 +756,7 @@ function Set-RegistryTweaks {
     Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\ReserveManager' 'ShippedWithReserves' 'REG_DWORD' '0'
     
     # Disable BitLocker
-    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\BitLocker' 'PreventDeviceEncryption' 'REG_DWORD' '1'
+    Set-RegistryValue "HKLM\zSYSTEM\$currentControlSet\Control\BitLocker" 'PreventDeviceEncryption' 'REG_DWORD' '1'
     
     # Disable Chat icon
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Chat' 'ChatIcon' 'REG_DWORD' '3'
@@ -768,7 +787,7 @@ function Set-RegistryTweaks {
     Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\InputPersonalization\TrainedDataStore' 'HarvestContacts' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Personalization\Settings' 'AcceptedPrivacyPolicy' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\DataCollection' 'AllowTelemetry' 'REG_DWORD' '0'
-    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Services\dmwappushservice' 'Start' 'REG_DWORD' '4'
+    Set-RegistryValue "HKLM\zSYSTEM\$currentControlSet\Services\dmwappushservice" 'Start' 'REG_DWORD' '4'
     
     # Prevent DevHome and Outlook installation
     Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Orchestrator\UScheduler_Oobe\OutlookUpdate' 'workCompleted' 'REG_DWORD' '1'
@@ -811,6 +830,7 @@ function Set-RegistryTweaks {
 
 function Remove-NonEssentialServices {
     Write-Log "Disabling non-essential services (minimal for standard build)..."
+    $currentControlSet = Get-OfflineCurrentControlSet
     
     # Standard build: Only disable diagnostic and telemetry services
     # This preserves maximum compatibility while removing privacy/performance drains
@@ -827,7 +847,7 @@ function Remove-NonEssentialServices {
     foreach ($service in $servicesToDisable) {
         Write-Log "Disabling service: $service"
         try {
-            Set-RegistryValue "HKLM\zSYSTEM\ControlSet001\Services\$service" 'Start' 'REG_DWORD' '4'
+            Set-RegistryValue "HKLM\zSYSTEM\$currentControlSet\Services\$service" 'Start' 'REG_DWORD' '4'
             $disabledCount++
         }
         catch {
