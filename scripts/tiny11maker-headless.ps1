@@ -708,6 +708,9 @@ function Set-RegistryTweaks {
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\DataCollection' 'DoNotShowFeedbackNotifications' 'REG_DWORD' '1'
     Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\DataCollection' 'AllowDeviceNameInTelemetry' 'REG_DWORD' '0'
     Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Diagnostics\DiagTrack' 'ShowedToastAtLevel' 'REG_DWORD' '1'
+
+    # Disable Program Compatibility Assistant through its documented policy
+    Set-RegistryValue 'HKLM\zSOFTWARE\Policies\Microsoft\Windows\AppCompat' 'DisablePCA' 'REG_DWORD' '1'
     
     Write-Log "Registry tweaks applied"
 }
@@ -721,7 +724,6 @@ function Remove-NonEssentialServices {
     $servicesToDisable = @(
         'DiagTrack',           # Connected User Experiences and Telemetry
         'WerSvc',              # Windows Error Reporting
-        'PcaSvc',              # Program Compatibility Assistant
         'SysMain'              # Superfetch (not needed on SSDs)
     )
     
