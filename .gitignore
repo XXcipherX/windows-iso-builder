@@ -13,6 +13,8 @@ output*/
 Tiny11*/
 tiny11/
 scratchdir/
+test-input/
+validation-results/
 Win11_Source.iso
 scripts/tiny11.iso
 scripts/autounattend.xml

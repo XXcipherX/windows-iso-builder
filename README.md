@@ -46,6 +46,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 | **ESD** | Use ESD compression | false |
 | **NetFx3** | Add .NET Framework 3.5 | false |
 | **Tiny11** | Apply Tiny11 optimization | **true** |
+| **ISO test** | Validate the x64 ISO and verify Windows PE boot in QEMU | false |
 
 ---
 
@@ -72,6 +73,21 @@ When enabled, the built ISO is processed through Tiny11 which:
 - OOBE bypass (local account, no Microsoft account required)
 - Additional app/capability/feature cleanup on first boot
 - Privacy-focused defaults
+
+---
+
+## ✅ ISO Testing in GitHub Actions
+
+Enable **ISO test** when manually starting `Build Windows` to run an optional test job after the ISO artifact is uploaded. The test:
+
+- verifies the ISO boot files and x64 WIM/ESD metadata;
+- runs `wimverify` against `boot.wim` and `install.wim` or `install.esd`;
+- validates a root `autounattend.xml` when present;
+- boots the ISO with UEFI in QEMU and waits up to 20 minutes for a Windows PE startup marker.
+
+The boot test uses KVM when the runner exposes `/dev/kvm` and automatically falls back to TCG software emulation otherwise.
+
+To test an existing image without rebuilding it, manually run `Test Windows ISO from URL`. Supply a direct HTTPS URL to the ISO and, optionally, its SHA256. A download page or a GitHub Actions artifact page is not a direct ISO URL. QEMU and WIM tools are installed only on the temporary Ubuntu runner.
 
 ---
 
@@ -132,8 +148,10 @@ windows-iso-builder/
 │   ├── repository-map.md           # File ownership map
 │   └── workflow.md                 # GitHub Actions pipeline notes
 ├── .github/workflows/
-│   └── build.yml                    # Unified CI/CD workflow
+│   ├── build.yml                    # Build and optional ISO test workflow
+│   └── test-iso-url.yml             # Test an existing ISO from an HTTPS URL
 ├── scripts/
+│   ├── test-windows-iso.ps1         # CI-only ISO and Windows PE smoke test
 │   └── tiny11maker-headless.ps1     # Tiny11 optimizer
 ├── AGENTS.md                        # Root pointer for IDE/CLI agents
 ├── uup-dump-get-windows-iso.ps1     # UUP dump ISO builder

@@ -15,6 +15,7 @@ run-name: >
   ${{ inputs.esd && 'ESD' || '' }}
   ${{ inputs.netfx3 && 'NETFX3' || '' }}
   ${{ inputs.tiny11 && 'TINY11' || '' }}
+  ${{ inputs.test_iso && 'ISO-TEST' || '' }}
 
 on:
   workflow_dispatch:
@@ -105,12 +106,19 @@ on:
         type: boolean
         required: true
         default: true
+      test_iso:
+        description: "Validate the ISO and verify Windows PE boot in QEMU"
+        type: boolean
+        required: true
+        default: false
 jobs:
   build:
     runs-on: ${{ fromJSON('{"x64":"windows-2025-vs2026","arm64":"windows-11-arm"}')[inputs.architecture] }}
     timeout-minutes: 360
     permissions:
       contents: read
+    outputs:
+      iso-artifact-id: ${{ steps.upload_iso_artifact.outputs.artifact-id }}
 
     steps:
       - name: Checkout
@@ -465,3 +473,67 @@ jobs:
           | Iso | [$env:ISO_NAME]($artifactUrl) |
           | UUP dump | [$($iso.title)]($($iso.uupDump.downloadUrl)) |
           "@
+
+  test_iso:
+    name: Validate ISO and boot Windows PE
+    if: ${{ inputs.test_iso }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download built ISO
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.iso-artifact-id }}
+          path: test-input
+
+      - name: Install ISO test dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ovmf qemu-system-x86 wimtools
+
+      - name: Validate ISO and boot Windows PE
+        shell: pwsh
+        run: |
+          $isoFiles = @(
+            Get-ChildItem -LiteralPath 'test-input' -File -Recurse |
+              Where-Object { $_.Extension -ieq '.iso' }
+          )
+          if ($isoFiles.Count -ne 1) {
+            throw "Expected exactly one ISO in the artifact; found $($isoFiles.Count)."
+          }
+
+          ./scripts/test-windows-iso.ps1 `
+            -ISOPath $isoFiles[0].FullName `
+            -BootTimeoutMinutes 20 `
+            -ReportDirectory 'validation-results'
+
+      - name: Add ISO test summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          Add-Content $env:GITHUB_STEP_SUMMARY '### ISO validation and Windows PE boot test'
+          if (Test-Path -LiteralPath 'validation-results/iso-validation.log') {
+            Add-Content $env:GITHUB_STEP_SUMMARY '```text'
+            Get-Content -LiteralPath 'validation-results/iso-validation.log' -Tail 80 |
+              Add-Content $env:GITHUB_STEP_SUMMARY
+            Add-Content $env:GITHUB_STEP_SUMMARY '```'
+          }
+          else {
+            Add-Content $env:GITHUB_STEP_SUMMARY 'The test stopped before a validation report was created.'
+          }
+
+      - name: Upload ISO test diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: iso-test-diagnostics
+          path: validation-results/
+          if-no-files-found: warn

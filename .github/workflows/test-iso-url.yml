@@ -1,0 +1,123 @@
+name: Test Windows ISO from URL
+run-name: >
+  Test external Windows ISO
+  ${{ inputs.boot_test && 'with QEMU boot' || 'structure only' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      iso_url:
+        description: "Direct HTTPS URL to an x64 Windows ISO"
+        type: string
+        required: true
+      expected_sha256:
+        description: "Expected SHA256 (optional)"
+        type: string
+        required: false
+      boot_test:
+        description: "Verify Windows PE boot in QEMU"
+        type: boolean
+        required: true
+        default: true
+
+jobs:
+  test_iso:
+    name: Validate external ISO
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download ISO
+        shell: bash
+        env:
+          ISO_URL: ${{ inputs.iso_url }}
+        run: |
+          if [[ ! "$ISO_URL" =~ ^https:// ]]; then
+            echo "Only direct HTTPS URLs are accepted." >&2
+            exit 1
+          fi
+
+          mkdir -p test-input
+          curl \
+            --proto '=https' \
+            --proto-redir '=https' \
+            --fail \
+            --location \
+            --retry 5 \
+            --retry-all-errors \
+            --connect-timeout 30 \
+            --max-filesize 12884901888 \
+            --max-time 3600 \
+            --silent \
+            --show-error \
+            --output test-input/external.iso \
+            "$ISO_URL"
+
+      - name: Verify expected checksum
+        if: ${{ inputs.expected_sha256 != '' }}
+        shell: pwsh
+        env:
+          EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+        run: |
+          $expected = $env:EXPECTED_SHA256.Trim().ToLowerInvariant()
+          if ($expected -notmatch '^[0-9a-f]{64}$') {
+            throw 'Expected SHA256 must contain exactly 64 hexadecimal characters.'
+          }
+
+          $actual = (Get-FileHash -LiteralPath 'test-input/external.iso' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "SHA256 mismatch. Expected $expected; got $actual."
+          }
+          Write-Output "SHA256 matches: $actual"
+
+      - name: Install ISO test dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          packages=(wimtools)
+          if [[ '${{ inputs.boot_test }}' == 'true' ]]; then
+            packages+=(ovmf qemu-system-x86)
+          fi
+          sudo apt-get install --yes --no-install-recommends "${packages[@]}"
+
+      - name: Validate ISO
+        shell: pwsh
+        run: |
+          $splat = @{
+            ISOPath          = 'test-input/external.iso'
+            ReportDirectory = 'validation-results'
+            BootTimeoutMinutes = 20
+          }
+          if ('${{ inputs.boot_test }}' -ne 'true') {
+            $splat.SkipBoot = $true
+          }
+
+          ./scripts/test-windows-iso.ps1 @splat
+
+      - name: Add ISO test summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          Add-Content $env:GITHUB_STEP_SUMMARY '### External ISO validation'
+          if (Test-Path -LiteralPath 'validation-results/iso-validation.log') {
+            Add-Content $env:GITHUB_STEP_SUMMARY '```text'
+            Get-Content -LiteralPath 'validation-results/iso-validation.log' -Tail 80 |
+              Add-Content $env:GITHUB_STEP_SUMMARY
+            Add-Content $env:GITHUB_STEP_SUMMARY '```'
+          }
+          else {
+            Add-Content $env:GITHUB_STEP_SUMMARY 'The test stopped before a validation report was created.'
+          }
+
+      - name: Upload ISO test diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: external-iso-test-diagnostics
+          path: validation-results/
+          if-no-files-found: warn

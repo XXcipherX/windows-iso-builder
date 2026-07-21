@@ -10,6 +10,7 @@ Use this directory as the agent knowledge base for the repository. The canonical
 2. Download UUP packages and convert them into a Windows ISO.
 3. Optionally run a headless Tiny11 pass to debloat the image, apply registry tweaks, bypass Windows setup requirements, and embed `autounattend.xml`.
 4. Upload the final ISO, checksum, and verification instructions as a GitHub Actions artifact.
+5. Optionally validate the x64 ISO and verify that it reaches Windows PE under QEMU, using KVM when available and TCG otherwise.
 
 ## Documentation index
 
