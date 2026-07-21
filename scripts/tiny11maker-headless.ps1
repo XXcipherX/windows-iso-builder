@@ -752,9 +752,6 @@ function Set-RegistryTweaks {
         Write-Log "autounattend.xml not found in script directory; unattended OOBE customization will be skipped." "WARN"
     }
     
-    # Disable reserved storage
-    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\ReserveManager' 'ShippedWithReserves' 'REG_DWORD' '0'
-    
     # Disable BitLocker
     Set-RegistryValue "HKLM\zSYSTEM\$currentControlSet\Control\BitLocker" 'PreventDeviceEncryption' 'REG_DWORD' '1'
     
