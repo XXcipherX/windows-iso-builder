@@ -809,73 +809,6 @@ function Set-RegistryTweaks {
     Write-Log "Registry tweaks applied"
 }
 
-function Remove-ScheduledTasks {
-    Write-Log "Removing telemetry scheduled tasks..."
-    
-    $tasksPath = "$scratchDir\Windows\System32\Tasks"
-    $tasksToRemove = @(
-        # Appraiser/CEIP tasks vary by Windows 11 build; keep legacy names as best-effort.
-        "$tasksPath\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser",
-        "$tasksPath\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser Exp",
-        "$tasksPath\Microsoft\Windows\Application Experience\PcaPatchDbTask",
-        "$tasksPath\Microsoft\Windows\Application Experience\ProgramDataUpdater",
-        "$tasksPath\Microsoft\Windows\Application Experience\StartupAppTask",
-        "$tasksPath\Microsoft\Windows\Application Experience\MareBackup",
-        "$tasksPath\Microsoft\Windows\Customer Experience Improvement Program\Consolidator",
-        "$tasksPath\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip",
-        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClient",
-        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload",
-        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioUpload",
-        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioRun",
-        "$tasksPath\Microsoft\Windows\Feedback\Siuf\DmClientOnUserSignIn",
-        "$tasksPath\Microsoft\Windows\Autochk\Proxy",
-        "$tasksPath\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector",
-        "$tasksPath\Microsoft\Windows\Windows Error Reporting\QueueReporting",
-        "$tasksPath\Microsoft\Windows\Windows Error Reporting\ReportQueue",
-        "$tasksPath\Microsoft\Windows\WindowsAI\Recall\InitialConfiguration",
-        "$tasksPath\Microsoft\Windows\WindowsAI\Recall\PolicyConfiguration",
-        "$tasksPath\Microsoft\Windows\WindowsAI\Copilot\CopilotDataCollectionTask"
-    )
-
-    $removedCount = 0
-    $missingCount = 0
-    $incompleteCount = 0
-    $removedTasks = @()
-    $missingTasks = @()
-    $incompleteTasks = @()
-    
-    foreach ($task in $tasksToRemove) {
-        $taskLabel = $task.Substring($tasksPath.Length + 1)
-        if (Test-Path -LiteralPath $task -PathType Leaf) {
-            if (Remove-PathQuietly -Path $task -Description "Scheduled task: $task") {
-                Write-Log "Removed task: $taskLabel"
-                $removedCount++
-                $removedTasks += $taskLabel
-            }
-            else {
-                Write-Log "Could not fully remove task: $taskLabel" "WARN"
-                $incompleteCount++
-                $incompleteTasks += $taskLabel
-            }
-        }
-        else {
-            $missingCount++
-            $missingTasks += $taskLabel
-        }
-    }
-    
-    Write-Log "Scheduled tasks cleanup complete (removed: $removedCount, missing: $missingCount, incomplete: $incompleteCount)"
-    if ($removedTasks.Count -gt 0) {
-        Write-Log "Removed scheduled tasks: $($removedTasks -join '; ')"
-    }
-    if ($missingTasks.Count -gt 0) {
-        Write-Log "Missing scheduled tasks: $($missingTasks -join '; ')"
-    }
-    if ($incompleteTasks.Count -gt 0) {
-        Write-Log "Incomplete scheduled tasks: $($incompleteTasks -join '; ')" "WARN"
-    }
-}
-
 function Remove-NonEssentialServices {
     Write-Log "Disabling non-essential services (minimal for standard build)..."
     
@@ -1307,7 +1240,6 @@ try {
     Remove-BloatwareApps
     Remove-EdgeAndOneDrive
     Set-RegistryTweaks
-    Remove-ScheduledTasks
     Remove-NonEssentialServices
     Dismount-RegistryHives
     

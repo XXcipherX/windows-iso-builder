@@ -429,6 +429,28 @@ $scripts = @(
 		<File path="C:\Windows\Setup\Scripts\FirstLogon.ps1">
 $scripts = @(
 	{
+		$tasksToDisable = @(
+			@{ TaskPath = '\Microsoft\Windows\Application Experience\'; TaskName = 'ProgramDataUpdater' };
+			@{ TaskPath = '\Microsoft\Windows\Customer Experience Improvement Program\'; TaskName = 'Consolidator' };
+			@{ TaskPath = '\Microsoft\Windows\Customer Experience Improvement Program\'; TaskName = 'UsbCeip' };
+			@{ TaskPath = '\Microsoft\Windows\Autochk\'; TaskName = 'Proxy' };
+			@{ TaskPath = '\Microsoft\Windows\DiskDiagnostic\'; TaskName = 'Microsoft-Windows-DiskDiagnosticDataCollector' };
+			@{ TaskPath = '\Microsoft\Windows\Windows Error Reporting\'; TaskName = 'QueueReporting' };
+		);
+
+		foreach( $task in $tasksToDisable ) {
+			$scheduledTask = Get-ScheduledTask -TaskPath $task.TaskPath -TaskName $task.TaskName -ErrorAction 'SilentlyContinue';
+			if( $null -ne $scheduledTask -and $scheduledTask.State -ne 'Disabled' ) {
+				try {
+					$scheduledTask | Disable-ScheduledTask -ErrorAction 'Stop' | Out-Null;
+					'Disabled scheduled task: {0}{1}' -f $task.TaskPath, $task.TaskName;
+				} catch {
+					'Could not disable scheduled task {0}{1}: {2}' -f $task.TaskPath, $task.TaskName, $_.Exception.Message;
+				}
+			}
+		}
+	};
+	{
 		cmd.exe /c "rmdir C:\Windows.old";
 	};
 	{
