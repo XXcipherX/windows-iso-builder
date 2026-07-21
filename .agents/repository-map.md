@@ -11,13 +11,15 @@
 
 ## GitHub Actions
 
-- `.github/workflows/build.yml` - manual workflow for building Windows ISOs. It maps workflow inputs to script parameters, frees runner disk space, builds the UUP ISO, optionally runs Tiny11, recalculates checksums, uploads artifacts, and can start an x64 ISO validation job.
-- `.github/workflows/test-iso-url.yml` - manual workflow for downloading an existing x64 ISO from a direct HTTPS URL and running the same structural and optional QEMU boot checks without rebuilding it.
+- `.github/workflows/build.yml` - manual workflow for building Windows ISOs. It maps workflow inputs to script parameters, frees runner disk space, builds the UUP ISO, optionally runs Tiny11, recalculates checksums, uploads artifacts, and can start x64 ISO validation or full installation jobs.
+- `.github/workflows/test-iso-url.yml` - manual workflow for downloading an existing x64 ISO from a direct HTTPS URL and running structural, QEMU boot, and optional full installation checks without rebuilding it.
 
 ## Scripts
 
 - `scripts/tiny11maker-headless.ps1` - CI-friendly Tiny11 optimization script. It accepts either a mounted ISO drive letter or an ISO path, processes a selected Windows image index, removes provisioned apps and selected system components, applies registry tweaks, optionally exports `install.esd`, builds a bootable ISO, and cleans up temporary files.
 - `scripts/test-windows-iso.ps1` - Ubuntu CI-only x64 ISO validator. It checks boot files, verifies WIM/ESD metadata and integrity, and optionally boots Windows PE under UEFI QEMU using KVM when available and TCG otherwise, with a temporary startup-marker answer file.
+- `scripts/test-windows-install.ps1` - Ubuntu CI-only full installation orchestrator. It creates a temporary answer-file overlay and sparse QEMU disk, requires KVM, waits for the installed guest audit, captures diagnostics, and deletes the virtual disk.
+- `scripts/test-installed-windows.ps1` - Windows guest-side first-logon audit used by the full installation test. It runs the production FirstLogon script and validates the expected installed and Tiny11 state.
 
 ## Generated artifacts
 
@@ -27,8 +29,8 @@ Common generated artifacts are intentionally ignored:
 - `Tiny11*/`
 - `tiny11/`
 - `scratchdir/`
-- `test-input/`, `validation-results/`
-- `*.iso`, `*.wim`, `*.esd`, `*.vhd`, `*.vhdx`, `*.swm`
+- `test-input/`, `validation-results/`, `install-results/`
+- `*.iso`, `*.wim`, `*.esd`, `*.vhd`, `*.vhdx`, `*.qcow2`, `*.swm`
 - `*.log`, `*.tmp`
 - `*.sha256`, `*.md5`
 

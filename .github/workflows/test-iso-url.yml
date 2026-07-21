@@ -2,6 +2,7 @@ name: Test Windows ISO from URL
 run-name: >
   Test external Windows ISO
   ${{ inputs.boot_test && 'with QEMU boot' || 'structure only' }}
+  ${{ inputs.install_test && 'and full installation' || '' }}
 
 on:
   workflow_dispatch:
@@ -19,18 +20,47 @@ on:
         type: boolean
         required: true
         default: true
+      install_test:
+        description: "Install x64 Windows in QEMU and audit first boot"
+        type: boolean
+        required: true
+        default: false
+      tiny11_audit:
+        description: "Audit this repository's Tiny11 settings after installation"
+        type: boolean
+        required: true
+        default: true
 
 jobs:
   test_iso:
     name: Validate external ISO
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 150
     permissions:
       contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Free disk space for installation test
+        if: ${{ inputs.install_test }}
+        shell: bash
+        run: |
+          echo "Free space before:"
+          df -h / /mnt || true
+
+          sudo rm -rf -- \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /usr/share/swift \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+
+          echo "Free space after:"
+          df -h / /mnt || true
 
       - name: Download ISO
         shell: bash
@@ -80,8 +110,11 @@ jobs:
         run: |
           sudo apt-get update
           packages=(wimtools)
-          if [[ '${{ inputs.boot_test }}' == 'true' ]]; then
+          if [[ '${{ inputs.boot_test }}' == 'true' || '${{ inputs.install_test }}' == 'true' ]]; then
             packages+=(ovmf qemu-system-x86)
+          fi
+          if [[ '${{ inputs.install_test }}' == 'true' ]]; then
+            packages+=(dosfstools qemu-utils)
           fi
           sudo apt-get install --yes --no-install-recommends "${packages[@]}"
 
@@ -99,6 +132,21 @@ jobs:
 
           ./scripts/test-windows-iso.ps1 @splat
 
+      - name: Install Windows and audit first boot
+        if: ${{ inputs.install_test }}
+        shell: pwsh
+        run: |
+          $splat = @{
+            ISOPath         = 'test-input/external.iso'
+            TimeoutMinutes  = 75
+            ReportDirectory = 'install-results'
+          }
+          if ('${{ inputs.tiny11_audit }}' -eq 'true') {
+            $splat.AuditTiny11 = $true
+          }
+
+          ./scripts/test-windows-install.ps1 @splat
+
       - name: Add ISO test summary
         if: ${{ always() }}
         shell: pwsh
@@ -114,10 +162,29 @@ jobs:
             Add-Content $env:GITHUB_STEP_SUMMARY 'The test stopped before a validation report was created.'
           }
 
+          if (Test-Path -LiteralPath 'install-results/install-test-summary.md') {
+            Get-Content -LiteralPath 'install-results/install-test-summary.md' |
+              Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+          elseif ('${{ inputs.install_test }}' -eq 'true') {
+            Add-Content $env:GITHUB_STEP_SUMMARY '### Full Windows installation test'
+            if (Test-Path -LiteralPath 'install-results/windows-install-test.log') {
+              Add-Content $env:GITHUB_STEP_SUMMARY '```text'
+              Get-Content -LiteralPath 'install-results/windows-install-test.log' -Tail 80 |
+                Add-Content $env:GITHUB_STEP_SUMMARY
+              Add-Content $env:GITHUB_STEP_SUMMARY '```'
+            }
+            else {
+              Add-Content $env:GITHUB_STEP_SUMMARY 'The installation test stopped before a report was created.'
+            }
+          }
+
       - name: Upload ISO test diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: external-iso-test-diagnostics
-          path: validation-results/
+          path: |
+            validation-results/
+            install-results/
           if-no-files-found: warn

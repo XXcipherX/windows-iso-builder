@@ -71,9 +71,12 @@ The repository has an optional ISO validation and Windows PE boot smoke test in 
 
 The optional ISO and QEMU smoke test is implemented by `scripts/test-windows-iso.ps1` for an ephemeral `ubuntu-24.04` GitHub runner. Do not invoke it during ordinary local validation: it mounts the ISO through `sudo`, requires `wimtools`, QEMU, and OVMF, and can consume substantial CPU time.
 
+The full installation test is implemented by `scripts/test-windows-install.ps1` and `scripts/test-installed-windows.ps1`. It requires Linux KVM, at least 25 GiB of temporary free space, and a long-running QEMU VM. It is CI-only: do not invoke it on a developer machine during local validation.
+
 ## Safety notes
 
 - Do not run cleanup commands from `.github/workflows/build.yml` on a developer machine without explicit approval.
 - Do not delete mounted images blindly. If a Tiny11 run fails, inspect the script log and mounted image state before cleanup.
 - Do not commit generated images, temporary directories, logs, or checksum files.
+- Do not run the GitHub runner disk cleanup or full installation test on a developer machine.
 - If `oscdimg.exe` is unavailable, `tiny11maker-headless.ps1` can download it into `scripts/`; it is treated as a generated artifact and should not be committed.

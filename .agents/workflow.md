@@ -17,6 +17,7 @@ Main inputs:
 - `netfx3`: include .NET Framework 3.5; default `false`.
 - `tiny11`: run Tiny11 optimization; default `true`.
 - `test_iso`: after artifact upload, validate the x64 ISO and boot Windows PE in QEMU; default `false`.
+- `test_install`: after artifact upload, install x64 Windows in QEMU/KVM and audit first boot; default `false`.
 
 ## Runner selection
 
@@ -40,12 +41,13 @@ The workflow chooses the runner from the architecture:
 7. Upload the ISO and checksum artifacts.
 8. Write a GitHub step summary with build details, checksum, artifact link, and UUP dump source link.
 9. If `test_iso=true`, download the artifact in a separate Ubuntu job, verify its boot files and WIM/ESD integrity, then wait up to 20 minutes for a Windows PE startup marker from QEMU.
+10. If `test_install=true` for x64, download the artifact in a separate Ubuntu job, free unused runner SDKs, install Windows to a sparse QEMU disk, run the guest audit after first logon, upload compact diagnostics, and delete the virtual disk.
 
 ## Existing ISO validation
 
 Workflow file: `.github/workflows/test-iso-url.yml`
 
-This separately triggered workflow accepts a direct HTTPS ISO URL, an optional SHA256, and a `boot_test` checkbox. Structural validation always runs. The QEMU Windows PE boot check runs when `boot_test=true`. The downloaded ISO is not uploaded again; only diagnostic files are retained as an artifact.
+This separately triggered workflow accepts a direct HTTPS ISO URL, an optional SHA256, and `boot_test`, `install_test`, and `tiny11_audit` checkboxes. Structural validation always runs. The QEMU Windows PE boot check runs when `boot_test=true`; a KVM installation and first-boot audit runs when `install_test=true`. The downloaded ISO is not uploaded again; only diagnostic files are retained as an artifact.
 
 ## Important behavior
 
@@ -55,7 +57,9 @@ This separately triggered workflow accepts a direct HTTPS ISO URL, an optional S
 - The Tiny11 output is staged through a temporary path before replacing the final ISO path.
 - The workflow expects output artifacts under `c:/output`.
 - ISO testing supports x64 media only, uses KVM when the runner exposes `/dev/kvm`, and falls back to TCG software emulation otherwise.
-- The QEMU answer file is stored on temporary writable media, takes precedence only for the `windowsPE` pass, writes a startup marker, and shuts the test VM down. It does not modify the tested ISO.
+- The full-install QEMU answer file and guest diagnostics use a temporary raw FAT image rather than QEMU's experimental writable VVFAT directory backend. The guest mirrors its JSON result and signals completion over COM1, shuts down cleanly, and the host reads the FAT image only after QEMU exits. The tested ISO is not modified.
+- The full installation test requires x64 KVM, image index 1, and at least 25 GiB free in the selected temporary work area. It derives a CI answer-file overlay from the ISO, automates only the ephemeral VM, and never uploads the virtual disk.
+- Tiny11 guest assertions cover setup-script completion, selected registry policy values, disabled services and tasks, removed Appx/capability/feature state, and removed Edge/OneDrive paths.
 
 ## Change checklist
 

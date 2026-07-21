@@ -16,6 +16,7 @@ run-name: >
   ${{ inputs.netfx3 && 'NETFX3' || '' }}
   ${{ inputs.tiny11 && 'TINY11' || '' }}
   ${{ inputs.test_iso && 'ISO-TEST' || '' }}
+  ${{ inputs.test_install && 'INSTALL-TEST' || '' }}
 
 on:
   workflow_dispatch:
@@ -108,6 +109,11 @@ on:
         default: true
       test_iso:
         description: "Validate the ISO and verify Windows PE boot in QEMU"
+        type: boolean
+        required: true
+        default: false
+      test_install:
+        description: "Install x64 Windows in QEMU and audit first boot"
         type: boolean
         required: true
         default: false
@@ -536,4 +542,96 @@ jobs:
         with:
           name: iso-test-diagnostics
           path: validation-results/
+          if-no-files-found: warn
+
+  test_install:
+    name: Install Windows and audit first boot
+    if: ${{ inputs.test_install && inputs.architecture == 'x64' }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Free disk space for installation test
+        shell: bash
+        run: |
+          echo "Free space before:"
+          df -h / /mnt || true
+
+          sudo rm -rf -- \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /usr/share/swift \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+
+          echo "Free space after:"
+          df -h / /mnt || true
+
+      - name: Install full test dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends dosfstools ovmf qemu-system-x86 qemu-utils wimtools
+
+      - name: Download built ISO
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.iso-artifact-id }}
+          path: test-input
+
+      - name: Install Windows and audit first boot
+        shell: pwsh
+        run: |
+          $isoFiles = @(
+            Get-ChildItem -LiteralPath 'test-input' -File -Recurse |
+              Where-Object { $_.Extension -ieq '.iso' }
+          )
+          if ($isoFiles.Count -ne 1) {
+            throw "Expected exactly one ISO in the artifact; found $($isoFiles.Count)."
+          }
+
+          $splat = @{
+            ISOPath         = $isoFiles[0].FullName
+            TimeoutMinutes  = 75
+            ReportDirectory = 'install-results'
+          }
+          if ('${{ inputs.tiny11 }}' -eq 'true') {
+            $splat.AuditTiny11 = $true
+          }
+
+          ./scripts/test-windows-install.ps1 @splat
+
+      - name: Add installation test summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath 'install-results/install-test-summary.md') {
+            Get-Content -LiteralPath 'install-results/install-test-summary.md' |
+              Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+          elseif (Test-Path -LiteralPath 'install-results/windows-install-test.log') {
+            Add-Content $env:GITHUB_STEP_SUMMARY '### Full Windows installation test'
+            Add-Content $env:GITHUB_STEP_SUMMARY '```text'
+            Get-Content -LiteralPath 'install-results/windows-install-test.log' -Tail 80 |
+              Add-Content $env:GITHUB_STEP_SUMMARY
+            Add-Content $env:GITHUB_STEP_SUMMARY '```'
+          }
+          else {
+            Add-Content $env:GITHUB_STEP_SUMMARY 'The installation test stopped before a report was created.'
+          }
+
+      - name: Upload installation test diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-install-test-diagnostics
+          path: install-results/
           if-no-files-found: warn

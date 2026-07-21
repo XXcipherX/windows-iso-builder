@@ -47,6 +47,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 | **NetFx3** | Add .NET Framework 3.5 | false |
 | **Tiny11** | Apply Tiny11 optimization | **true** |
 | **ISO test** | Validate the x64 ISO and verify Windows PE boot in QEMU | false |
+| **Full install test** | Install x64 Windows in QEMU and audit the first boot | false |
 
 ---
 
@@ -88,6 +89,14 @@ Enable **ISO test** when manually starting `Build Windows` to run an optional te
 The boot test uses KVM when the runner exposes `/dev/kvm` and automatically falls back to TCG software emulation otherwise.
 
 To test an existing image without rebuilding it, manually run `Test Windows ISO from URL`. Supply a direct HTTPS URL to the ISO and, optionally, its SHA256. A download page or a GitHub Actions artifact page is not a direct ISO URL. QEMU and WIM tools are installed only on the temporary Ubuntu runner.
+
+### Full installation test
+
+Enable **Full install test** to perform a separate, opt-in integration test on an ephemeral Ubuntu runner. It requires KVM, creates a sparse 64 GiB virtual disk, installs image index 1 with a temporary CI answer-file overlay, boots the installed x64 system, runs the production `FirstLogon.ps1`, and returns a JSON audit report. The ISO and repository `autounattend.xml` are not modified.
+
+When Tiny11 is enabled, the guest audit checks the setup logs, selected registry policies, disabled services and scheduled tasks, removed Appx packages, capabilities, optional features, and Edge/OneDrive paths. A success screenshot and compact logs are uploaded; the virtual disk is always deleted. The job frees unused SDKs only on the temporary GitHub runner and requires at least 25 GiB of free workspace before starting.
+
+The URL workflow provides matching **Full installation test** and **Tiny11 audit** checkboxes. Disable **Tiny11 audit** when testing an ISO that was not produced by this repository.
 
 ---
 
@@ -152,6 +161,8 @@ windows-iso-builder/
 │   └── test-iso-url.yml             # Test an existing ISO from an HTTPS URL
 ├── scripts/
 │   ├── test-windows-iso.ps1         # CI-only ISO and Windows PE smoke test
+│   ├── test-windows-install.ps1     # CI-only full installation orchestrator
+│   ├── test-installed-windows.ps1   # In-guest installed-state audit
 │   └── tiny11maker-headless.ps1     # Tiny11 optimizer
 ├── AGENTS.md                        # Root pointer for IDE/CLI agents
 ├── uup-dump-get-windows-iso.ps1     # UUP dump ISO builder
