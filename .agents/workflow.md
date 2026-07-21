@@ -16,7 +16,6 @@ Main inputs:
 - `esd`: request ESD compression; default `false`.
 - `netfx3`: include .NET Framework 3.5; default `false`.
 - `tiny11`: run Tiny11 optimization; default `true`.
-- `low_latency_profile`: apply and verify the Windows Low Latency Profile feature flag `58989092` User (8) override during Tiny11 optimization; default `true`.
 
 ## Runner selection
 
@@ -35,7 +34,7 @@ The workflow chooses the runner from the architecture:
    - UUP ESD compression is enabled only when `esd=true` and `tiny11=false`, because Tiny11 recompresses later when requested.
 3. Free disk space on the runner.
 4. Build the Windows ISO through `uup-dump-get-windows-iso.ps1`.
-5. If `tiny11=true`, copy `autounattend.xml` into `scripts/`, run `scripts/tiny11maker-headless.ps1`, optionally apply and verify the Low Latency Profile User (8) override in the offline SYSTEM hive, replace the original ISO with the `_Tiny11.iso` output, and recalculate SHA256.
+5. If `tiny11=true`, copy `autounattend.xml` into `scripts/`, run `scripts/tiny11maker-headless.ps1`, replace the original ISO with the `_Tiny11.iso` output, and recalculate SHA256.
 6. Generate verification instructions.
 7. Upload the ISO and checksum artifacts.
 8. Write a GitHub step summary with build details, checksum, artifact link, and UUP dump source link.

@@ -15,7 +15,6 @@ run-name: >
   ${{ inputs.esd && 'ESD' || '' }}
   ${{ inputs.netfx3 && 'NETFX3' || '' }}
   ${{ inputs.tiny11 && 'TINY11' || '' }}
-  ${{ inputs.tiny11 && inputs.low_latency_profile && 'LLP' || '' }}
 
 on:
   workflow_dispatch:
@@ -106,12 +105,6 @@ on:
         type: boolean
         required: true
         default: true
-      low_latency_profile:
-        description: "Apply and verify Low Latency Profile 58989092 User override"
-        type: boolean
-        required: true
-        default: true
-
 jobs:
   build:
     runs-on: ${{ fromJSON('{"x64":"windows-2025-vs2026","arm64":"windows-11-arm"}')[inputs.architecture] }}
@@ -295,9 +288,6 @@ jobs:
             INDEX   = 1
           }
           if ('${{ inputs.esd }}' -eq 'true') { $splat.ESD = $true }
-          if ('${{ inputs.low_latency_profile }}' -eq 'true') {
-            $splat.EnableLowLatencyProfile = $true
-          }
 
           # INDEX=1: UUP dump builds a single-edition ISO, so the WIM always has index 1
           .\scripts\tiny11maker-headless.ps1 @splat
@@ -439,9 +429,6 @@ jobs:
           }
           if ('${{ inputs.netfx3 }}' -eq 'true') {
             $buildOptions += 'Add .NET Framework 3.5'
-          }
-          if ('${{ inputs.tiny11 }}' -eq 'true' -and '${{ inputs.low_latency_profile }}' -eq 'true') {
-            $buildOptions += 'Apply and verify Low Latency Profile 58989092 User override'
           }
           if (-not [string]::IsNullOrWhiteSpace($env:BUILD_REVISION)) {
             $buildOptions += "Revision: $env:BUILD_REVISION"

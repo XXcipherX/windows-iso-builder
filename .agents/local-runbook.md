@@ -55,8 +55,6 @@ pwsh .\scripts\tiny11maker-headless.ps1 `
 
 Add `-ESD` to export `install.esd` instead of `install.wim`.
 
-Add `-EnableLowLatencyProfile` to write and verify the Windows Low Latency Profile feature flag `58989092` User (8) override in every offline `ControlSetXXX`. The script records the feature definition and image-default state for diagnostics, but a missing definition does not prevent the override from being written.
-
 ## Lightweight validation
 
 Use these before considering a full ISO build:
