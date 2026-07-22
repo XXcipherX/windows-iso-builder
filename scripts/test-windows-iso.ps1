@@ -129,6 +129,21 @@ function Send-QemuQmpCommand {
     }
 }
 
+function Test-TextFileContains {
+    param(
+        [string]$Path,
+        [string]$Text
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    try {
+        return [System.IO.File]::ReadAllText($Path).Contains($Text)
+    }
+    catch {
+        return $false
+    }
+}
+
 function Test-WindowsPeBoot {
     param([string]$Path)
 
@@ -136,8 +151,10 @@ function Test-WindowsPeBoot {
         throw 'The QEMU boot test is supported only on an Ubuntu GitHub-hosted runner.'
     }
 
-    if (-not (Get-Command 'qemu-system-x86_64' -ErrorAction SilentlyContinue)) {
-        throw 'Required command is unavailable: qemu-system-x86_64'
+    foreach ($command in @('qemu-system-x86_64', 'mkfs.vfat', 'id')) {
+        if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
+            throw "Required command is unavailable: $command"
+        }
     }
 
     $firmwareCandidates = @(
@@ -153,7 +170,24 @@ function Test-WindowsPeBoot {
 
     $workRoot = Join-Path ([System.IO.Path]::GetTempPath()) "windows-iso-smoke-$PID"
     $markerDirectory = Join-Path $workRoot 'marker-media'
+    $markerImage = Join-Path $workRoot 'marker-media.img'
     New-Item -ItemType Directory -Path $markerDirectory -Force | Out-Null
+    $markerMounted = $false
+    $process = $null
+
+    try {
+    $imageStream = [System.IO.File]::Create($markerImage)
+    try { $imageStream.SetLength(64MB) } finally { $imageStream.Dispose() }
+    Invoke-NativeChecked -FilePath 'mkfs.vfat' -Arguments @('-n', 'CI_WINPE', $markerImage) -Action 'Format Windows PE marker image' | Out-Null
+
+    $runnerUid = ((& id -u) | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Could not determine the runner user ID.' }
+    $runnerGid = ((& id -g) | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Could not determine the runner group ID.' }
+    $mountOptions = "loop,rw,uid=$runnerUid,gid=$runnerGid,umask=022"
+    Invoke-NativeChecked -FilePath 'sudo' -Arguments @('mount', '-o', $mountOptions, '--', $markerImage, $markerDirectory) -Action 'Mount Windows PE marker image' | Out-Null
+    $markerMounted = $true
+
     Set-Content -LiteralPath (Join-Path $markerDirectory 'CI_MARKER.TAG') -Value 'QEMU Windows PE boot marker'
 
     $answerFile = @'
@@ -176,8 +210,11 @@ function Test-WindowsPeBoot {
     Set-Content -LiteralPath (Join-Path $markerDirectory 'BootMarker.cmd') -Encoding ascii -Value @(
         '@echo off',
         'echo Windows PE booted successfully>%1\WINPE_BOOTED.TXT',
+        'echo CI_WINPE_BOOTED>COM1',
         'wpeutil.exe shutdown'
     )
+    Invoke-NativeChecked -FilePath 'sudo' -Arguments @('umount', '--', $markerDirectory) -Action 'Flush Windows PE marker image' | Out-Null
+    $markerMounted = $false
 
     $varsPath = Join-Path $workRoot 'OVMF_VARS.fd'
     Copy-Item -LiteralPath $firmware.Vars -Destination $varsPath
@@ -212,7 +249,7 @@ function Test-WindowsPeBoot {
         '-drive', "if=pflash,format=raw,readonly=on,file=$($firmware.Code)",
         '-drive', "if=pflash,format=raw,file=$varsPath",
         '-drive', "file=$Path,media=cdrom,readonly=on,format=raw",
-        '-drive', "file=fat:rw:$markerDirectory,if=none,id=marker,format=raw",
+        '-drive', "file=$markerImage,if=none,id=marker,format=raw,cache=writethrough",
         '-device', 'qemu-xhci,id=xhci',
         '-device', 'usb-storage,drive=marker,removable=on',
         '-boot', 'order=d,menu=off',
@@ -247,15 +284,14 @@ function Test-WindowsPeBoot {
 
     $startedAt = Get-Date
     $timedOut = $false
-    $bootMarker = Join-Path $markerDirectory 'WINPE_BOOTED.TXT'
+    $completionSignal = 'CI_WINPE_BOOTED'
+    $completionObserved = $false
     $nextHeartbeatMinute = 1
     while (-not $process.HasExited) {
         $elapsed = (Get-Date) - $startedAt
-        if (Test-Path -LiteralPath $bootMarker) {
-            Write-Report 'Windows PE boot marker detected; stopping QEMU.'
-            [void](Send-QemuQmpCommand -Process $process -Command 'quit')
-            if (-not $process.WaitForExit(5000)) { $process.Kill($true) }
-            break
+        if (-not $completionObserved -and (Test-TextFileContains -Path $serialLog -Text $completionSignal)) {
+            $completionObserved = $true
+            Write-Report 'Windows PE boot signal received; waiting for a clean guest shutdown.'
         }
 
         if ($elapsed.TotalMinutes -ge $BootTimeoutMinutes) {
@@ -270,7 +306,7 @@ function Test-WindowsPeBoot {
             break
         }
 
-        if ($elapsed.TotalSeconds -le 90) {
+        if (-not $completionObserved -and $elapsed.TotalSeconds -le 90) {
             [void](Send-QemuQmpCommand -Process $process -Command 'send-key' -CommandArguments @{
                 keys = @(@{ type = 'qcode'; data = 'spc' })
             })
@@ -289,13 +325,41 @@ function Test-WindowsPeBoot {
     if ($timedOut) {
         throw "Windows PE did not report startup within $BootTimeoutMinutes minutes."
     }
-    if (-not (Test-Path -LiteralPath $bootMarker)) {
-        throw 'QEMU exited before Windows PE wrote the startup marker.'
+    if ($process.ExitCode -ne 0) {
+        throw "QEMU exited with code $($process.ExitCode) before Windows PE completed."
     }
 
-    Copy-Item -LiteralPath $bootMarker -Destination (Join-Path $ReportDirectory 'WINPE_BOOTED.TXT')
+    Invoke-NativeChecked -FilePath 'sudo' -Arguments @('mount', '-o', 'loop,ro', '--', $markerImage, $markerDirectory) -Action 'Mount Windows PE marker results' | Out-Null
+    $markerMounted = $true
+    $bootMarker = Join-Path $markerDirectory 'WINPE_BOOTED.TXT'
+    $markerReturned = Test-Path -LiteralPath $bootMarker -PathType Leaf
+    if ($markerReturned) {
+        Copy-Item -LiteralPath $bootMarker -Destination (Join-Path $ReportDirectory 'WINPE_BOOTED.TXT') -Force
+    }
+    Invoke-NativeChecked -FilePath 'sudo' -Arguments @('umount', '--', $markerDirectory) -Action 'Unmount Windows PE marker results' | Out-Null
+    $markerMounted = $false
+
+    if (-not $markerReturned) {
+        throw 'QEMU exited before Windows PE wrote the startup marker.'
+    }
+    if (-not $completionObserved) {
+        Write-Report 'COM1 boot signal was not observed; accepting the marker from the flushed FAT image.'
+    }
     Write-Report 'Windows PE boot marker received successfully.'
-    Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    finally {
+        if ($markerMounted) {
+            & sudo umount --lazy -- $markerDirectory 2>&1 | Out-Null
+        }
+        if ($process -and -not $process.HasExited) {
+            try {
+                [void](Send-QemuQmpCommand -Process $process -Command 'quit')
+                if (-not $process.WaitForExit(5000)) { $process.Kill($true) }
+            }
+            catch { }
+        }
+        Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 foreach ($command in @('sudo', 'mount', 'umount', 'wiminfo', 'wimverify')) {

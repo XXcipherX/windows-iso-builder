@@ -110,10 +110,10 @@ jobs:
           sudo apt-get update
           packages=(wimtools)
           if [[ '${{ inputs.boot_test }}' == 'true' || '${{ inputs.install_test }}' == 'true' ]]; then
-            packages+=(ovmf qemu-system-x86)
+            packages+=(dosfstools ovmf qemu-system-x86)
           fi
           if [[ '${{ inputs.install_test }}' == 'true' ]]; then
-            packages+=(dosfstools qemu-utils)
+            packages+=(qemu-utils)
           fi
           sudo apt-get install --yes --no-install-recommends "${packages[@]}"
 

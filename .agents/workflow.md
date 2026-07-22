@@ -40,7 +40,7 @@ The workflow chooses the runner from the architecture:
 6. Generate verification instructions.
 7. Upload the ISO and checksum artifacts.
 8. Write a GitHub step summary with build details, checksum, artifact link, and UUP dump source link.
-9. If `test_iso=true` and `test_install=false`, download the artifact in a separate Ubuntu job, verify its boot files and WIM/ESD integrity, then wait up to 20 minutes for a Windows PE startup marker from QEMU.
+9. If `test_iso=true` and `test_install=false`, download the artifact in a separate Ubuntu job, verify its boot files and WIM/ESD integrity, then wait up to 20 minutes for a Windows PE startup signal from QEMU and verify the marker returned on a raw FAT image after clean shutdown.
 10. If `test_install=true` for x64, download the artifact in a separate Ubuntu job, free unused runner SDKs, validate the ISO structure and WIM/ESD integrity, install Windows to a sparse QEMU disk without a redundant Windows PE boot, run the guest audit after first logon, upload compact diagnostics, and delete the virtual disk.
 
 ## Existing ISO validation
@@ -57,6 +57,7 @@ This separately triggered workflow accepts a direct HTTPS ISO URL, an optional S
 - The Tiny11 output is staged through a temporary path before replacing the final ISO path.
 - The workflow expects output artifacts under `c:/output`.
 - ISO testing supports x64 media only, uses KVM when the runner exposes `/dev/kvm`, and falls back to TCG software emulation otherwise.
+- The quick Windows PE boot test uses a temporary raw FAT image instead of QEMU's experimental writable VVFAT backend. Windows PE writes the marker, signals completion over COM1, and shuts down before the runner mounts the FAT image read-only.
 - Full installation testing includes structural ISO and WIM/ESD validation. If both test checkboxes are selected, the standalone Windows PE boot test is skipped rather than duplicating the ISO download and boot coverage.
 - The full-install QEMU answer file and guest diagnostics use a temporary raw FAT image rather than QEMU's experimental writable VVFAT directory backend. The guest mirrors its JSON result and signals completion over COM1, shuts down cleanly, and the host reads the FAT image only after QEMU exits. The tested ISO is not modified.
 - The full installation test requires x64 KVM, image index 1, and at least 25 GiB free in the selected temporary work area. It derives a CI answer-file overlay from the ISO, automates only the ephemeral VM, and never uploads the virtual disk.

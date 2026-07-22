@@ -86,7 +86,7 @@ Enable **ISO test** when manually starting `Build Windows` to run an optional te
 - validates a root `autounattend.xml` when present;
 - boots the ISO with UEFI in QEMU and waits up to 20 minutes for a Windows PE startup marker.
 
-The boot test uses KVM when the runner exposes `/dev/kvm` and automatically falls back to TCG software emulation otherwise.
+The boot test uses KVM when the runner exposes `/dev/kvm` and automatically falls back to TCG software emulation otherwise. Its answer file and startup marker are stored on a temporary raw FAT image; the guest signals startup over COM1, shuts down cleanly, and the runner reads the marker only after QEMU exits.
 
 When **Full install test** is enabled, this separate Windows PE boot job is skipped. The full test performs the same structural and WIM/ESD checks first, then proceeds directly to installation, first boot, and audit. Selecting both checkboxes therefore does not download or test the ISO twice.
 
