@@ -153,11 +153,13 @@ if ($auditTiny11) {
         @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'HideUnsupportedHardwareNotifications'; Value = 1 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent'; Name = 'DisableWindowsConsumerFeatures'; Value = 1 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent'; Name = 'DisableSoftLanding'; Value = 1 },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Device Metadata'; Name = 'PreventDeviceMetadataFromNetwork'; Value = 1 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'; Name = 'AllowTelemetry'; Value = 0 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'; Name = 'DoNotShowFeedbackNotifications'; Value = 1 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'; Name = 'AllowDeviceNameInTelemetry'; Value = 0 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting'; Name = 'Disabled'; Value = 1 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppCompat'; Name = 'DisablePCA'; Value = 1 },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\WindowsNotepad'; Name = 'DisableAIFeatures'; Value = 1 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive'; Name = 'DisableFileSyncNGSC'; Value = 1 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh'; Name = 'AllowNewsAndInterests'; Value = 0 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat'; Name = 'ChatIcon'; Value = 3 },
@@ -187,12 +189,14 @@ if ($auditTiny11) {
         }
     }
 
-    try {
-        $sysMainStart = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\SysMain' -Name 'Start' -ErrorAction Stop).Start
-        Add-Check -Name 'SysMain remains enabled' -Passed ([int]$sysMainStart -ne 4) -Expected 'Not disabled' -Actual ([string]$sysMainStart)
-    }
-    catch {
-        Add-Check -Name 'SysMain remains enabled' -Passed $false -Expected 'Present and not disabled' -Actual '<missing>'
+    foreach ($serviceName in @('SysMain', 'PcaSvc')) {
+        try {
+            $serviceStart = (Get-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName" -Name 'Start' -ErrorAction Stop).Start
+            Add-Check -Name "$serviceName remains enabled" -Passed ([int]$serviceStart -ne 4) -Expected 'Not disabled' -Actual ([string]$serviceStart)
+        }
+        catch {
+            Add-Check -Name "$serviceName remains enabled" -Passed $false -Expected 'Present and not disabled' -Actual '<missing>'
+        }
     }
 
     $scheduledTasks = @(
