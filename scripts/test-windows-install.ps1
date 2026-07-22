@@ -688,17 +688,16 @@ try {
     if ($process.ExitCode -ne 0) {
         throw "QEMU exited with code $($process.ExitCode) before the full installation test completed."
     }
-    if (-not $completionReturned) {
-        throw 'QEMU exited before the installed Windows audit marker was written.'
-    }
 
     $guestResultPath = Join-Path $ReportDirectory 'install-test-result.json'
     $guestResult = $null
+    $guestResultChannel = $null
     if (Test-Path -LiteralPath $guestResultPath -PathType Leaf) {
         try {
             $candidateResult = Get-Content -LiteralPath $guestResultPath -Raw | ConvertFrom-Json -ErrorAction Stop
             Assert-GuestResult -Result $candidateResult
             $guestResult = $candidateResult
+            $guestResultChannel = 'FAT'
         }
         catch {
             [void](Write-Report "The FAT audit result is invalid; trying COM1: $($_.Exception.Message)")
@@ -708,9 +707,13 @@ try {
         Write-Report 'Recovered install-test-result.json from the COM1 result channel.'
         $guestResult = Get-Content -LiteralPath $guestResultPath -Raw | ConvertFrom-Json -ErrorAction Stop
         Assert-GuestResult -Result $guestResult
+        $guestResultChannel = 'COM1'
     }
     if ($null -eq $guestResult) {
         throw 'The guest completed without returning install-test-result.json.'
+    }
+    if (-not $completionReturned) {
+        Write-Report "FAT completion marker is missing; accepting the validated $guestResultChannel audit result."
     }
     Write-Report "Installed Windows audit completed: passed=$($guestResult.passed); checks=$($guestResult.totalChecks); failed=$($guestResult.failedChecks)."
 
