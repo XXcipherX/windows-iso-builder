@@ -109,15 +109,18 @@ function Test-WimFile {
     Write-Report "$Label metadata and integrity are valid."
 }
 
-function Send-QemuMonitorCommand {
+function Send-QemuQmpCommand {
     param(
         [System.Diagnostics.Process]$Process,
-        [string]$Command
+        [string]$Command,
+        [hashtable]$CommandArguments
     )
 
     if ($Process.HasExited) { return $false }
     try {
-        $Process.StandardInput.WriteLine($Command)
+        $request = [ordered]@{ execute = $Command }
+        if ($CommandArguments) { $request.arguments = $CommandArguments }
+        $Process.StandardInput.WriteLine(($request | ConvertTo-Json -Compress -Depth 5))
         $Process.StandardInput.Flush()
         return $true
     }
@@ -180,7 +183,7 @@ function Test-WindowsPeBoot {
     Copy-Item -LiteralPath $firmware.Vars -Destination $varsPath
     $serialLog = Join-Path $ReportDirectory 'qemu-serial.log'
     $qemuLog = Join-Path $ReportDirectory 'qemu.log'
-    $screenshotPath = Join-Path $ReportDirectory 'qemu-timeout.ppm'
+    $screenshotPath = Join-Path $ReportDirectory 'qemu-timeout.png'
 
     $acceleration = 'tcg'
     $cpuModel = 'max'
@@ -215,7 +218,7 @@ function Test-WindowsPeBoot {
         '-boot', 'order=d,menu=off',
         '-display', 'none',
         '-serial', "file:$serialLog",
-        '-monitor', 'stdio',
+        '-qmp', 'stdio',
         '-nic', 'none',
         '-no-reboot'
     )
@@ -232,6 +235,13 @@ function Test-WindowsPeBoot {
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     [void]$process.Start()
+    $qmpGreeting = $process.StandardOutput.ReadLine()
+    try { $qmpGreetingMessage = $qmpGreeting | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw "QEMU did not return a valid QMP greeting: $qmpGreeting" }
+    if ($null -eq $qmpGreetingMessage.PSObject.Properties['QMP']) {
+        throw "QEMU did not return the expected QMP greeting: $qmpGreeting"
+    }
+    [void](Send-QemuQmpCommand -Process $process -Command 'qmp_capabilities')
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
 
@@ -243,22 +253,27 @@ function Test-WindowsPeBoot {
         $elapsed = (Get-Date) - $startedAt
         if (Test-Path -LiteralPath $bootMarker) {
             Write-Report 'Windows PE boot marker detected; stopping QEMU.'
-            [void](Send-QemuMonitorCommand -Process $process -Command 'quit')
+            [void](Send-QemuQmpCommand -Process $process -Command 'quit')
             if (-not $process.WaitForExit(5000)) { $process.Kill($true) }
             break
         }
 
         if ($elapsed.TotalMinutes -ge $BootTimeoutMinutes) {
             $timedOut = $true
-            [void](Send-QemuMonitorCommand -Process $process -Command "screendump $screenshotPath")
+            [void](Send-QemuQmpCommand -Process $process -Command 'screendump' -CommandArguments @{
+                filename = $screenshotPath
+                format = 'png'
+            })
             Start-Sleep -Seconds 2
-            [void](Send-QemuMonitorCommand -Process $process -Command 'quit')
+            [void](Send-QemuQmpCommand -Process $process -Command 'quit')
             if (-not $process.WaitForExit(5000)) { $process.Kill($true) }
             break
         }
 
         if ($elapsed.TotalSeconds -le 90) {
-            [void](Send-QemuMonitorCommand -Process $process -Command 'sendkey spc')
+            [void](Send-QemuQmpCommand -Process $process -Command 'send-key' -CommandArguments @{
+                keys = @(@{ type = 'qcode'; data = 'spc' })
+            })
         }
         if ($elapsed.TotalMinutes -ge $nextHeartbeatMinute) {
             Write-Report "Windows PE boot test is still running ($nextHeartbeatMinute minute(s) elapsed)..."
@@ -268,7 +283,7 @@ function Test-WindowsPeBoot {
     }
 
     $process.WaitForExit()
-    Set-Content -LiteralPath $qemuLog -Value @($stdoutTask.Result, $stderrTask.Result)
+    Set-Content -LiteralPath $qemuLog -Value @($qmpGreeting, $stdoutTask.Result, $stderrTask.Result)
     Write-Report "QEMU exited with code $($process.ExitCode)."
 
     if ($timedOut) {

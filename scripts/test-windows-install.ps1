@@ -141,15 +141,18 @@ function Select-WorkDirectory {
     return $selected.Path
 }
 
-function Send-QemuMonitorCommand {
+function Send-QemuQmpCommand {
     param(
         [System.Diagnostics.Process]$Process,
-        [string]$Command
+        [string]$Command,
+        [hashtable]$CommandArguments
     )
 
     if ($Process.HasExited) { return $false }
     try {
-        $Process.StandardInput.WriteLine($Command)
+        $request = [ordered]@{ execute = $Command }
+        if ($CommandArguments) { $request.arguments = $CommandArguments }
+        $Process.StandardInput.WriteLine(($request | ConvertTo-Json -Compress -Depth 5))
         $Process.StandardInput.Flush()
         return $true
     }
@@ -569,8 +572,8 @@ try {
 
     $serialLog = Join-Path $ReportDirectory 'install-qemu-serial.log'
     $qemuLog = Join-Path $ReportDirectory 'install-qemu.log'
-    $timeoutScreenshot = Join-Path $ReportDirectory 'install-timeout.ppm'
-    $successScreenshot = Join-Path $ReportDirectory 'install-success.ppm'
+    $timeoutScreenshot = Join-Path $ReportDirectory 'install-timeout.png'
+    $successScreenshot = Join-Path $ReportDirectory 'install-success.png'
     $arguments = @(
         '-machine', 'q35,accel=kvm',
         '-cpu', 'host',
@@ -586,7 +589,7 @@ try {
         '-boot', 'once=d,menu=off',
         '-display', 'none',
         '-serial', "file:$serialLog",
-        '-monitor', 'stdio',
+        '-qmp', 'stdio',
         '-nic', 'none',
         '-rtc', 'base=localtime'
     )
@@ -603,6 +606,13 @@ try {
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     [void]$process.Start()
+    $qmpGreeting = $process.StandardOutput.ReadLine()
+    try { $qmpGreetingMessage = $qmpGreeting | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw "QEMU did not return a valid QMP greeting: $qmpGreeting" }
+    if ($null -eq $qmpGreetingMessage.PSObject.Properties['QMP']) {
+        throw "QEMU did not return the expected QMP greeting: $qmpGreeting"
+    }
+    [void](Send-QemuQmpCommand -Process $process -Command 'qmp_capabilities')
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
 
@@ -616,18 +626,26 @@ try {
         if (-not $completionObserved -and (Test-TextFileContains -Path $serialLog -Text $completionSignal)) {
             $completionObserved = $true
             Write-Report 'Installed Windows audit marker received; capturing screenshot and waiting for a clean guest shutdown.'
-            [void](Send-QemuMonitorCommand -Process $process -Command "screendump $successScreenshot")
+            [void](Send-QemuQmpCommand -Process $process -Command 'screendump' -CommandArguments @{
+                filename = $successScreenshot
+                format = 'png'
+            })
         }
         if ($elapsed.TotalMinutes -ge $TimeoutMinutes) {
             $timedOut = $true
-            [void](Send-QemuMonitorCommand -Process $process -Command "screendump $timeoutScreenshot")
+            [void](Send-QemuQmpCommand -Process $process -Command 'screendump' -CommandArguments @{
+                filename = $timeoutScreenshot
+                format = 'png'
+            })
             Start-Sleep -Seconds 2
-            [void](Send-QemuMonitorCommand -Process $process -Command 'quit')
+            [void](Send-QemuQmpCommand -Process $process -Command 'quit')
             if (-not $process.WaitForExit(10000)) { $process.Kill($true) }
             break
         }
         if ($elapsed.TotalSeconds -le 90) {
-            [void](Send-QemuMonitorCommand -Process $process -Command 'sendkey spc')
+            [void](Send-QemuQmpCommand -Process $process -Command 'send-key' -CommandArguments @{
+                keys = @(@{ type = 'qcode'; data = 'spc' })
+            })
         }
         if ($elapsed.TotalMinutes -ge $nextHeartbeatMinute) {
             $diskBytes = if (Test-Path -LiteralPath $diskPath) { (Get-Item -LiteralPath $diskPath).Length } else { 0 }
@@ -638,7 +656,7 @@ try {
     }
 
     $process.WaitForExit()
-    Set-Content -LiteralPath $qemuLog -Value @($stdoutTask.Result, $stderrTask.Result)
+    Set-Content -LiteralPath $qemuLog -Value @($qmpGreeting, $stdoutTask.Result, $stderrTask.Result)
     Write-Report "QEMU exited with code $($process.ExitCode)."
 
     Invoke-NativeChecked -FilePath 'sudo' -Arguments @('mount', '-o', 'loop,ro', '--', $ciMediaImage, $ciMediaDirectory) -Action 'Mount FAT test results' | Out-Null
@@ -733,7 +751,7 @@ finally {
     }
     if ($process -and -not $process.HasExited) {
         try {
-            [void](Send-QemuMonitorCommand -Process $process -Command 'quit')
+            [void](Send-QemuQmpCommand -Process $process -Command 'quit')
             if (-not $process.WaitForExit(5000)) { $process.Kill($true) }
         }
         catch { }
