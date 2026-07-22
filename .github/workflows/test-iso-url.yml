@@ -1,8 +1,7 @@
 name: Test Windows ISO from URL
 run-name: >
   Test external Windows ISO
-  ${{ inputs.boot_test && 'with QEMU boot' || 'structure only' }}
-  ${{ inputs.install_test && 'and full installation' || '' }}
+  ${{ inputs.install_test && 'with full installation' || inputs.boot_test && 'with QEMU boot' || 'structure only' }}
 
 on:
   workflow_dispatch:
@@ -16,12 +15,12 @@ on:
         type: string
         required: false
       boot_test:
-        description: "Verify Windows PE boot in QEMU"
+        description: "Verify Windows PE boot in QEMU (skipped by full installation test)"
         type: boolean
         required: true
         default: true
       install_test:
-        description: "Install x64 Windows in QEMU and audit first boot"
+        description: "Validate, install x64 Windows in QEMU, and audit first boot"
         type: boolean
         required: true
         default: false
@@ -126,7 +125,7 @@ jobs:
             ReportDirectory = 'validation-results'
             BootTimeoutMinutes = 20
           }
-          if ('${{ inputs.boot_test }}' -ne 'true') {
+          if ('${{ inputs.boot_test }}' -ne 'true' -or '${{ inputs.install_test }}' -eq 'true') {
             $splat.SkipBoot = $true
           }
 

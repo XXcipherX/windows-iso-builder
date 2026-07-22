@@ -108,12 +108,12 @@ on:
         required: true
         default: true
       test_iso:
-        description: "Validate the ISO and verify Windows PE boot in QEMU"
+        description: "Run quick ISO validation and Windows PE boot (skipped by full installation test)"
         type: boolean
         required: true
         default: false
       test_install:
-        description: "Install x64 Windows in QEMU and audit first boot"
+        description: "Validate, install x64 Windows in QEMU, and audit first boot"
         type: boolean
         required: true
         default: false
@@ -482,7 +482,7 @@ jobs:
 
   test_iso:
     name: Validate ISO and boot Windows PE
-    if: ${{ inputs.test_iso }}
+    if: ${{ inputs.test_iso && !inputs.test_install && inputs.architecture == 'x64' }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -587,6 +587,22 @@ jobs:
           artifact-ids: ${{ needs.build.outputs.iso-artifact-id }}
           path: test-input
 
+      - name: Validate ISO structure
+        shell: pwsh
+        run: |
+          $isoFiles = @(
+            Get-ChildItem -LiteralPath 'test-input' -File -Recurse |
+              Where-Object { $_.Extension -ieq '.iso' }
+          )
+          if ($isoFiles.Count -ne 1) {
+            throw "Expected exactly one ISO in the artifact; found $($isoFiles.Count)."
+          }
+
+          ./scripts/test-windows-iso.ps1 `
+            -ISOPath $isoFiles[0].FullName `
+            -SkipBoot `
+            -ReportDirectory 'install-results/iso-validation'
+
       - name: Install Windows and audit first boot
         shell: pwsh
         run: |
@@ -613,6 +629,14 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
+          if (Test-Path -LiteralPath 'install-results/iso-validation/iso-validation.log') {
+            Add-Content $env:GITHUB_STEP_SUMMARY '### ISO structural validation'
+            Add-Content $env:GITHUB_STEP_SUMMARY '```text'
+            Get-Content -LiteralPath 'install-results/iso-validation/iso-validation.log' -Tail 80 |
+              Add-Content $env:GITHUB_STEP_SUMMARY
+            Add-Content $env:GITHUB_STEP_SUMMARY '```'
+          }
+
           if (Test-Path -LiteralPath 'install-results/install-test-summary.md') {
             Get-Content -LiteralPath 'install-results/install-test-summary.md' |
               Add-Content $env:GITHUB_STEP_SUMMARY
@@ -625,7 +649,7 @@ jobs:
             Add-Content $env:GITHUB_STEP_SUMMARY '```'
           }
           else {
-            Add-Content $env:GITHUB_STEP_SUMMARY 'The installation test stopped before a report was created.'
+            Add-Content $env:GITHUB_STEP_SUMMARY 'The installation test did not start or stopped before a report was created.'
           }
 
       - name: Upload installation test diagnostics
