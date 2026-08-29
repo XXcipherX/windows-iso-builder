@@ -4,8 +4,8 @@
 
 .DESCRIPTION
     Executes the production FirstLogon.ps1 when present, validates the installed x64
-    Windows system, optionally audits the expected Tiny11 state, and writes machine-readable
-    results to the writable CI media attached by test-windows-install.ps1.
+    Windows system, optionally audits the expected Tiny11 state, and returns the
+    machine-readable result over COM1.
 #>
 
 [CmdletBinding()]
@@ -340,12 +340,4 @@ catch {
 if ([string]::IsNullOrWhiteSpace($resultJson)) {
     throw 'Audit result serialization produced an empty JSON payload.'
 }
-$resultPath = Join-Path $ResultDirectory 'install-test-result.json'
-$resultJson | Set-Content -LiteralPath $resultPath -Encoding UTF8 -ErrorAction SilentlyContinue
-Set-Content -LiteralPath (Join-Path $ResultDirectory 'CI_INSTALL_COMPLETE.TAG') -Value 'Installed Windows audit completed' -Encoding ASCII
 Send-SerialCompletionSignal -Signal 'CI_WINDOWS_INSTALL_AUDIT_COMPLETE' -ResultJson $resultJson
-
-# Give the host time to observe the serial signal and capture the success screenshot. A clean guest
-# shutdown also flushes the writable FAT test media before the host reads the result files.
-Start-Sleep -Seconds 20
-shutdown.exe /s /t 0 /f

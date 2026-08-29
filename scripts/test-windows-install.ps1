@@ -161,21 +161,6 @@ function Send-QemuQmpCommand {
     }
 }
 
-function Test-TextFileContains {
-    param(
-        [string]$Path,
-        [string]$Text
-    )
-
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
-    try {
-        return [System.IO.File]::ReadAllText($Path).Contains($Text)
-    }
-    catch {
-        return $false
-    }
-}
-
 function Restore-GuestResultFromSerial {
     param(
         [string]$SerialPath,
@@ -449,7 +434,7 @@ function Set-CiAnswerFile {
     $command = Add-UnattendElement -Document $Document -Parent $firstLogonCommands -Name 'SynchronousCommand' -Value $null -ActionAdd
     [void](Add-UnattendElement -Document $Document -Parent $command -Name 'Order' -Value '1')
     [void](Add-UnattendElement -Document $Document -Parent $command -Name 'Description' -Value 'Run CI installation audit')
-    $commandLine = 'powershell.exe -WindowStyle Normal -ExecutionPolicy Bypass -NoProfile -Command "$drive = Get-PSDrive -PSProvider FileSystem | Where-Object { Test-Path -LiteralPath (Join-Path $_.Root ''CI_INSTALL_TEST.TAG'') } | Select-Object -First 1; if (-not $drive) { throw ''CI install test media not found.'' }; & (Join-Path $drive.Root ''test-installed-windows.ps1'') -ResultDirectory $drive.Root"'
+    $commandLine = 'powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -NoProfile -Command "$drive = Get-PSDrive -PSProvider FileSystem | Where-Object { Test-Path -LiteralPath (Join-Path $_.Root ''CI_INSTALL_TEST.TAG'') } | Select-Object -First 1; if (-not $drive) { throw ''CI install test media not found.'' }; & (Join-Path $drive.Root ''test-installed-windows.ps1'') -ResultDirectory $drive.Root"'
     [void](Add-UnattendElement -Document $Document -Parent $command -Name 'CommandLine' -Value $commandLine)
     [void]$shell.InsertBefore($autoLogon, $oobe)
 
@@ -617,19 +602,36 @@ try {
     $stderrTask = $process.StandardError.ReadToEndAsync()
 
     $startedAt = Get-Date
+    $guestResultPath = Join-Path $ReportDirectory 'install-test-result.json'
+    $guestResult = $null
     $timedOut = $false
-    $completionSignal = 'CI_WINDOWS_INSTALL_AUDIT_COMPLETE'
-    $completionObserved = $false
     $nextHeartbeatMinute = 1
     while (-not $process.HasExited) {
         $elapsed = (Get-Date) - $startedAt
-        if (-not $completionObserved -and (Test-TextFileContains -Path $serialLog -Text $completionSignal)) {
-            $completionObserved = $true
-            Write-Report 'Installed Windows audit marker received; capturing screenshot and waiting for a clean guest shutdown.'
+        if (Restore-GuestResultFromSerial -SerialPath $serialLog -OutputPath $guestResultPath) {
+            $guestResult = Get-Content -LiteralPath $guestResultPath -Raw | ConvertFrom-Json -ErrorAction Stop
+            Assert-GuestResult -Result $guestResult
+            Write-Report 'Validated the installed Windows audit result from COM1; preparing a clean desktop screenshot.'
+
+            [void](Send-QemuQmpCommand -Process $process -Command 'send-key' -CommandArguments @{
+                keys = @(@{ type = 'qcode'; data = 'esc' })
+            })
+            Start-Sleep -Seconds 1
+            [void](Send-QemuQmpCommand -Process $process -Command 'send-key' -CommandArguments @{
+                keys = @(
+                    @{ type = 'qcode'; data = 'meta_l' },
+                    @{ type = 'qcode'; data = 'd' }
+                )
+            })
+            Start-Sleep -Seconds 2
             [void](Send-QemuQmpCommand -Process $process -Command 'screendump' -CommandArguments @{
                 filename = $successScreenshot
                 format = 'png'
             })
+            Start-Sleep -Seconds 1
+            [void](Send-QemuQmpCommand -Process $process -Command 'quit')
+            if (-not $process.WaitForExit(10000)) { $process.Kill($true) }
+            break
         }
         if ($elapsed.TotalMinutes -ge $TimeoutMinutes) {
             $timedOut = $true
@@ -659,61 +661,46 @@ try {
     Set-Content -LiteralPath $qemuLog -Value @($qmpGreeting, $stdoutTask.Result, $stderrTask.Result)
     Write-Report "QEMU exited with code $($process.ExitCode)."
 
-    Invoke-NativeChecked -FilePath 'sudo' -Arguments @('mount', '-o', 'loop,ro', '--', $ciMediaImage, $ciMediaDirectory) -Action 'Mount FAT test results' | Out-Null
-    $ciMediaMounted = $true
-    $completionMarker = Join-Path $ciMediaDirectory 'CI_INSTALL_COMPLETE.TAG'
-    $completionReturned = Test-Path -LiteralPath $completionMarker -PathType Leaf
-    foreach ($name in @(
-        'CI_INSTALL_COMPLETE.TAG',
-        'install-test-result.json',
-        'serial-signal-error.txt',
-        'guest-setupact.log',
-        'guest-setuperr.log',
-        'guest-Specialize.log',
-        'guest-DefaultUser.log',
-        'guest-FirstLogon.log',
-        'guest-RemovePackages.log',
-        'guest-RemoveCapabilities.log',
-        'guest-RemoveFeatures.log'
-    )) {
-        $source = Join-Path $ciMediaDirectory $name
-        if (Test-Path -LiteralPath $source -PathType Leaf) {
-            Copy-Item -LiteralPath $source -Destination (Join-Path $ReportDirectory $name) -Force
-        }
-    }
-    Invoke-NativeChecked -FilePath 'sudo' -Arguments @('umount', '--', $ciMediaDirectory) -Action 'Unmount FAT test results' | Out-Null
-    $ciMediaMounted = $false
-
-    if ($timedOut) { throw "Windows installation did not complete within $TimeoutMinutes minutes." }
-    if ($process.ExitCode -ne 0) {
-        throw "QEMU exited with code $($process.ExitCode) before the full installation test completed."
-    }
-
-    $guestResultPath = Join-Path $ReportDirectory 'install-test-result.json'
-    $guestResult = $null
-    $guestResultChannel = $null
-    if (Test-Path -LiteralPath $guestResultPath -PathType Leaf) {
-        try {
-            $candidateResult = Get-Content -LiteralPath $guestResultPath -Raw | ConvertFrom-Json -ErrorAction Stop
-            Assert-GuestResult -Result $candidateResult
-            $guestResult = $candidateResult
-            $guestResultChannel = 'FAT'
-        }
-        catch {
-            [void](Write-Report "The FAT audit result is invalid; trying COM1: $($_.Exception.Message)")
-        }
-    }
     if ($null -eq $guestResult -and (Restore-GuestResultFromSerial -SerialPath $serialLog -OutputPath $guestResultPath)) {
-        Write-Report 'Recovered install-test-result.json from the COM1 result channel.'
+        Write-Report 'Recovered and validated the installed Windows audit result from COM1 after QEMU exited.'
         $guestResult = Get-Content -LiteralPath $guestResultPath -Raw | ConvertFrom-Json -ErrorAction Stop
         Assert-GuestResult -Result $guestResult
-        $guestResultChannel = 'COM1'
     }
+
+    try {
+        Invoke-NativeChecked -FilePath 'sudo' -Arguments @('mount', '-o', 'loop,ro', '--', $ciMediaImage, $ciMediaDirectory) -Action 'Mount FAT diagnostics' | Out-Null
+        $ciMediaMounted = $true
+        foreach ($name in @(
+            'serial-signal-error.txt',
+            'guest-setupact.log',
+            'guest-setuperr.log',
+            'guest-Specialize.log',
+            'guest-DefaultUser.log',
+            'guest-FirstLogon.log',
+            'guest-RemovePackages.log',
+            'guest-RemoveCapabilities.log',
+            'guest-RemoveFeatures.log'
+        )) {
+            $source = Join-Path $ciMediaDirectory $name
+            if (Test-Path -LiteralPath $source -PathType Leaf) {
+                Copy-Item -LiteralPath $source -Destination (Join-Path $ReportDirectory $name) -Force
+            }
+        }
+        Invoke-NativeChecked -FilePath 'sudo' -Arguments @('umount', '--', $ciMediaDirectory) -Action 'Unmount FAT diagnostics' | Out-Null
+        $ciMediaMounted = $false
+    }
+    catch {
+        Write-Report "FAT diagnostics are unavailable: $($_.Exception.Message)"
+    }
+
     if ($null -eq $guestResult) {
-        throw 'The guest completed without returning install-test-result.json.'
-    }
-    if (-not $completionReturned) {
-        Write-Report "FAT completion marker is missing; accepting the validated $guestResultChannel audit result."
+        if ($timedOut) {
+            throw "Windows did not return a valid COM1 first-boot audit result within $TimeoutMinutes minutes."
+        }
+        if ($process.ExitCode -ne 0) {
+            throw "QEMU exited with code $($process.ExitCode) before returning a valid COM1 audit result."
+        }
+        throw 'The guest exited without returning a valid COM1 audit result.'
     }
     Write-Report "Installed Windows audit completed: passed=$($guestResult.passed); checks=$($guestResult.totalChecks); failed=$($guestResult.failedChecks)."
 
@@ -728,6 +715,7 @@ try {
         "| Locale | $locale |",
         '| Architecture | x64 |',
         '| Acceleration | KVM |',
+        '| Result channel | COM1 |',
         "| Checks | $($guestResult.totalChecks) total; $($guestResult.failedChecks) failed |",
         "| Duration | $([math]::Round(((Get-Date) - $startedAt).TotalMinutes, 2)) minutes |",
         ''
