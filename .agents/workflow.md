@@ -12,7 +12,7 @@ Main inputs:
 - `versions`: Windows target; options are `Windows 11 25H2`, `Windows 11 26H2`, `Windows 11 Beta`, `Windows 11 26H1`, `Windows 11 Experimental`, and `Windows 11 Future Platforms`; default `Windows 11 25H2`.
 - `edition`: `Pro` or `Home`; default `Pro`.
 - `language`: one of the supported UI language labels; default `English (United States)`.
-- `revision`: optional full build number matching the selected target, such as `26300.8553` for Experimental. Fixed branches also accept a numeric suffix; Future Platforms requires a full build number.
+- `revision`: optional full build number matching the selected target, such as `26340.9233` for Experimental. Fixed branches also accept a numeric suffix; Future Platforms requires a full build number.
 - `esd`: request ESD compression; default `false`.
 - `netfx3`: include .NET Framework 3.5; default `false`.
 - `tiny11`: run Tiny11 optimization; default `true`.
@@ -32,7 +32,7 @@ The workflow chooses the runner from the architecture:
 2. Map user-facing inputs to script values:
    - Language labels become UUP language codes such as `en-us` and `ru-ru`.
    - Version labels become `uup-dump-get-windows-iso.ps1` target names such as `win11-25h2`.
-   - Public release and Insider names map to UUP rings: 26H2 accepts `RETAIL` or `RP`, Beta uses `WIS`, Experimental uses `WIF`, and Future Platforms uses `CANARY`.
+   - Public release and Insider names map to UUP rings: 25H2, 26H2, and 26H1 accept `RETAIL` or `RP`; Beta uses `WIS`; Experimental uses `WIF`; and Future Platforms uses `CANARY`.
    - UUP ESD compression is enabled only when `esd=true` and `tiny11=false`, because Tiny11 recompresses later when requested.
 3. Free disk space on the runner.
 4. Build the Windows ISO through `uup-dump-get-windows-iso.ps1`.

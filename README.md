@@ -37,7 +37,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 | **Architecture** | x64, arm64 | x64 |
 | **Edition** | Pro, Home | Pro |
 | **Language** | 38 languages (ar-sa → zh-tw) | English (United States) |
-| **Revision** | Optional build matching the selected version, for example `26300.8553` | — |
+| **Revision** | Optional build matching the selected version, for example `26340.9233` | — |
 
 ### Build Options
 
@@ -112,16 +112,18 @@ pwsh uup-dump-get-windows-iso.ps1 win11-25h2 c:/output -architecture x64 -editio
 
 Supported target keys:
 
-| Target | UUP branch | Current UUP ring |
+| Target | UUP branch | Allowed UUP ring |
 |--------|------------|------------------|
-| `win11-25h2` | `26200.*` | Retail |
+| `win11-25h2` | `26200.*` | Retail / RP |
 | `win11-26h2` | `26300.*` | Retail / RP |
 | `win11-beta` | `26220.*` | WIS |
-| `win11-26h1` | `28000.*` | Retail |
-| `win11-experimental` | `26300.*` | WIF |
+| `win11-26h1` | `28000.*` | Retail / RP |
+| `win11-experimental` | `26340.*` | WIF |
 | `win11-future-platforms` | Latest future platform build | Canary |
 
-Use `-revision` with a full build number matching the selected target, such as `-revision 26300.8553` for Experimental. For fixed branches, a suffix such as `-revision 8553` is also accepted. Future Platforms requires the full build number because its major build changes over time.
+Release-version targets accept only Retail or Release Preview candidates, preventing a newer Canary publication with the same base build from being selected silently.
+
+Use `-revision` with a full build number matching the selected target, such as `-revision 26340.9233` for Experimental. For fixed branches, a suffix such as `-revision 9233` is also accepted. Future Platforms requires the full build number because its major build changes over time.
 
 ### Optimize existing ISO (Tiny11)
 

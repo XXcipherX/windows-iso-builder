@@ -90,7 +90,7 @@ on:
         default: English (United States)
         required: true
       revision:
-        description: "Build matching selected version, e.g. 26300.8553 (optional)"
+        description: "Build matching selected version, e.g. 26340.9233 (optional)"
         type: string
         required: false
       esd:
