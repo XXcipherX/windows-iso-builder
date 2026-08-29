@@ -33,7 +33,7 @@ UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Up
 
 | Input | Options | Default |
 |-------|---------|---------|
-| **Version** | Windows 11 25H2, Beta, 26H1, Experimental, Future Platforms | Windows 11 25H2 |
+| **Version** | Windows 11 25H2, 26H2, Beta, 26H1, Experimental, Future Platforms | Windows 11 25H2 |
 | **Architecture** | x64, arm64 | x64 |
 | **Edition** | Pro, Home | Pro |
 | **Language** | 38 languages (ar-sa → zh-tw) | English (United States) |
@@ -115,6 +115,7 @@ Supported target keys:
 | Target | UUP branch | Current UUP ring |
 |--------|------------|------------------|
 | `win11-25h2` | `26200.*` | Retail |
+| `win11-26h2` | `26300.*` | Retail / RP |
 | `win11-beta` | `26220.*` | WIS |
 | `win11-26h1` | `28000.*` | Retail |
 | `win11-experimental` | `26300.*` | WIF |
