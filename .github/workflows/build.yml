@@ -269,18 +269,6 @@ jobs:
       # STAGE 2: Tiny11 optimization (optional)
       # ============================================================
 
-      - name: Prepare autounattend.xml for Tiny11
-        if: ${{ inputs.tiny11 }}
-        shell: pwsh
-        run: |
-          if (Test-Path "autounattend.xml") {
-            Write-Output "Copying autounattend.xml to scripts directory"
-            Copy-Item "autounattend.xml" "scripts\autounattend.xml" -Force
-          } else {
-            Write-Error "autounattend.xml not found in repository root!"
-            exit 1
-          }
-
       - name: Run Tiny11 optimization
         if: ${{ inputs.tiny11 }}
         shell: pwsh

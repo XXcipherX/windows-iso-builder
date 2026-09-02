@@ -5,7 +5,7 @@
 - `README.md` - human-facing project overview and usage examples.
 - `.gitignore` - excludes large generated images, build directories, logs, checksums, and editor/OS noise.
 - `LICENSE` - project license.
-- `uup-dump-get-windows-iso.ps1` - UUP dump ISO builder. It queries the UUP dump API, selects a build, downloads the generated UUP package script, patches conversion options, runs the generated `uup_download_windows.cmd`, writes metadata/checksum files, and exports `ISO_NAME` and `ISO_PATH` for GitHub Actions.
+- `uup-dump-get-windows-iso.ps1` - UUP dump ISO builder. It queries the UUP dump API, selects a build, prepares the architecture/edition-specific answer file, runs the downloaded converter with `SkipISO=1`, creates the ISO once from the prepared media folder, writes metadata/checksum files, and exports `ISO_NAME` and `ISO_PATH` for GitHub Actions.
 - `CustomAppsList.txt` - app allowlist for UUP conversion when `CustomList=1` is set in the generated `ConvertConfig.ini`.
 - `autounattend.xml` - unattended Windows setup configuration and embedded PowerShell cleanup scripts. It handles OOBE/privacy and core-isolation defaults plus post-install removal of selected packages, capabilities, features, and scheduled update prompts.
 

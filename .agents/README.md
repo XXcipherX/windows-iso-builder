@@ -8,7 +8,7 @@ Use this directory as the agent knowledge base for the repository. The canonical
 
 1. Query UUP dump for the requested Windows build.
 2. Download UUP packages and convert them into a Windows ISO.
-3. Optionally run a headless Tiny11 pass to debloat the image, apply registry tweaks, bypass Windows setup requirements, and embed `autounattend.xml`.
+3. Prepare and embed a build-specific `autounattend.xml` in every final ISO; optionally run a headless Tiny11 pass to debloat the image, apply registry tweaks, and bypass Windows setup requirements.
 4. Upload the final ISO, checksum, and verification instructions as a GitHub Actions artifact.
 5. Optionally run a quick x64 ISO validation and verify that it reaches Windows PE under QEMU, using KVM when available and TCG otherwise.
 6. Optionally validate the x64 ISO structure, install Windows under KVM, and audit the installed Tiny11 state after first logon; this full mode replaces the separate Windows PE boot test.

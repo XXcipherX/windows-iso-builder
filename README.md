@@ -9,12 +9,14 @@ Combines [UUP dump](https://uupdump.net) ISO assembly with [Tiny11](https://gith
 ## 🔄 Pipeline
 
 ```
-UUP dump API → Download UUP files → Build ISO → Tiny11 optimization → Upload artifact
-                                                  (optional)
+UUP dump API → Download UUP files → Build ISO → Finalize ISO → Upload artifact
+                                                     │
+                                      autounattend.xml + optional Tiny11
 ```
 
 1. **UUP dump** — fetches Windows update packages and builds a clean ISO
 2. **Tiny11** — removes bloatware, applies registry tweaks, bypasses system requirements
+3. **Unattended setup** — embeds `autounattend.xml` in every final ISO
 
 ---
 
@@ -70,11 +72,18 @@ When enabled, the built ISO is processed through Tiny11 which:
 - BitLocker encryption disabled
 - Chat icon / Widgets / Cortana startup removed
 
-### Post-Install (autounattend.xml)
+## 🧩 Unattended Setup (autounattend.xml)
+
+Every ISO produced by `uup-dump-get-windows-iso.ps1`, including the **Build Windows** workflow, contains `autounattend.xml` at its root whether Tiny11 is enabled or not. The builder prepares the copy for the selected x64/ARM64 architecture and Pro/Home edition, while the tracked file remains the x64 Pro template.
+
+During Windows Setup it provides:
+
 - OOBE bypass (local account, no Microsoft account required)
 - Additional app/capability/feature cleanup on first boot
 - Core isolation (VBS/HVCI) disabled
 - Privacy-focused defaults
+
+Tiny11 still adds its separate offline image cleanup and registry changes when enabled.
 
 ---
 

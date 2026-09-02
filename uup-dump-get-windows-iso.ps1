@@ -105,6 +105,26 @@ function Get-EditionName($e) {
   }
 }
 
+function New-BuildAnswerFile([string]$OutputPath) {
+  $document = [System.Xml.XmlDocument]::new()
+  $document.PreserveWhitespace = $true
+  $document.Load((Join-Path $PSScriptRoot 'autounattend.xml'))
+
+  $components = @($document.SelectNodes("//*[local-name()='component']"))
+  if ($components.Count -eq 0) { throw 'No component nodes found in autounattend.xml.' }
+  $components | ForEach-Object { $_.SetAttribute('processorArchitecture', $arch) }
+
+  $keyNode = $document.SelectSingleNode("//*[local-name()='ProductKey']/*[local-name()='Key']")
+  if (-not $keyNode) { throw 'Windows Setup product key not found in autounattend.xml.' }
+  $productKeys = @{
+    pro  = 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'
+    home = 'YTMG3-N6DKC-DKB77-7M9GH-8HVX7'
+  }
+  $keyNode.InnerText = $productKeys[$edition.ToLowerInvariant()]
+
+  $document.Save($OutputPath)
+}
+
 $TARGETS = @{
   "win11-25h2"             = @{ baseBuild="26200"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP") }
   "win11-26h2"             = @{ baseBuild="26300"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP") }
@@ -393,6 +413,9 @@ function Get-WindowsIso($name, $destinationDirectory) {
   Invoke-WebRequest -Method Post -Uri $iso.downloadPackageUrl -Body $downloadPackageBody -OutFile "$buildDirectory.zip" | Out-Null
   Expand-Archive "$buildDirectory.zip" $buildDirectory
 
+  $preparedAnswerPath = Join-Path $PSScriptRoot 'scripts\autounattend.xml'
+  New-BuildAnswerFile -OutputPath $preparedAnswerPath
+
   $customAppsSource = ".\CustomAppsList.txt"
   $customAppsDest   = "$buildDirectory\CustomAppsList.txt"
 
@@ -403,7 +426,8 @@ function Get-WindowsIso($name, $destinationDirectory) {
     -replace '^(ResetBase\s*)=.*','$1=1' `
     -replace '^(Cleanup\s*)=.*','$1=1' `
     -replace '^(CustomList\s*)=.*','$1=1' `
-    -replace '^(SkipEdge\s*)=.*','$1=1'
+    -replace '^(SkipEdge\s*)=.*','$1=1' `
+    -replace '^(SkipISO\s*)=.*','$1=1'
 
   $tag = ""
   if ($esd) { $convertConfig = $convertConfig -replace '^(wim2esd\s*)=.*', '$1=1'; $tag += ".E" }
@@ -451,6 +475,32 @@ function Get-WindowsIso($name, $destinationDirectory) {
     Write-Host "::warning title=Build failed::Dumping last 1500 raw log lines"
     Get-Content $rawLog -Tail 1500 | Write-Host
     throw "uup_download_windows.cmd failed with exit code $downloadExitCode"
+  }
+
+  $mediaDirectories = @(Get-ChildItem -LiteralPath $buildDirectory -Directory | Where-Object {
+    Test-Path -LiteralPath (Join-Path $_.FullName 'sources\boot.wim') -PathType Leaf
+  })
+  if ($mediaDirectories.Count -ne 1) {
+    throw "Expected one prepared ISO media directory; found $($mediaDirectories.Count)."
+  }
+
+  $mediaDirectory = $mediaDirectories[0]
+  Copy-Item -LiteralPath $preparedAnswerPath -Destination (Join-Path $mediaDirectory.FullName 'autounattend.xml') -Force
+  $sourceIsoPath = "$($mediaDirectory.FullName).ISO"
+  $cdimagePath = Join-Path $buildDirectory 'bin\cdimage.exe'
+  $bootData = if ($architecture -eq 'arm64') {
+    "-bootdata:1#pEF,e,b$($mediaDirectory.FullName)\efi\Microsoft\boot\efisys.bin"
+  } else {
+    "-bootdata:2#p0,e,b$($mediaDirectory.FullName)\boot\etfsboot.com#pEF,e,b$($mediaDirectory.FullName)\efi\Microsoft\boot\efisys.bin"
+  }
+  $volumePrefix = if ($edition -eq 'home') { 'CCRA' } else { 'CPRA' }
+  $volumeArch = if ($architecture -eq 'arm64') { 'A64' } else { 'X64' }
+  $volumeLabel = "${volumePrefix}_${volumeArch}FRE_$($lang.ToUpperInvariant())_DV9"
+
+  Write-CleanLine "Creating ISO with embedded autounattend.xml"
+  & $cdimagePath $bootData -o -m -u2 -udfver102 "-l$volumeLabel" $mediaDirectory.FullName $sourceIsoPath
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $sourceIsoPath -PathType Leaf)) {
+    throw "cdimage.exe failed to create $sourceIsoPath"
   }
 
   $isoFiles = @(Resolve-Path "$buildDirectory/*.iso" -ErrorAction SilentlyContinue)
