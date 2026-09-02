@@ -61,7 +61,7 @@ This separately triggered workflow accepts a direct HTTPS ISO URL, an optional S
 - Full installation testing includes structural ISO and WIM/ESD validation. If both test checkboxes are selected, the standalone Windows PE boot test is skipped rather than duplicating the ISO download and boot coverage.
 - The full-install QEMU answer file and guest diagnostics use a temporary raw FAT image rather than QEMU's experimental writable VVFAT directory backend. It supplies the CI answer file and audit script and retains diagnostic logs, but it is not a result fallback: only a validated COM1 JSON payload can complete the audit. Once that result arrives, the host hides transient desktop UI, captures the success screenshot, and ends QEMU immediately. The tested ISO is not modified.
 - The full installation test requires x64 KVM, image index 1, and at least 25 GiB free in the selected temporary work area. It derives a CI answer-file overlay from the ISO, automates only the ephemeral VM, and never uploads the virtual disk.
-- Tiny11 guest assertions cover setup-script completion, selected registry policy values, disabled services and tasks, removed Appx/capability/feature state, and removed Edge/OneDrive paths.
+- Tiny11 guest assertions cover setup-script completion, selected registry policy values, disabled services, removed Appx/capability/feature state, and removed Edge/OneDrive paths.
 
 ## Change checklist
 

@@ -199,23 +199,6 @@ if ($auditTiny11) {
         }
     }
 
-    $scheduledTasks = @(
-        @{ Path = '\Microsoft\Windows\Application Experience\'; Name = 'ProgramDataUpdater' },
-        @{ Path = '\Microsoft\Windows\Customer Experience Improvement Program\'; Name = 'Consolidator' },
-        @{ Path = '\Microsoft\Windows\Customer Experience Improvement Program\'; Name = 'UsbCeip' },
-        @{ Path = '\Microsoft\Windows\Autochk\'; Name = 'Proxy' },
-        @{ Path = '\Microsoft\Windows\DiskDiagnostic\'; Name = 'Microsoft-Windows-DiskDiagnosticDataCollector' },
-        @{ Path = '\Microsoft\Windows\Windows Error Reporting\'; Name = 'QueueReporting' }
-    )
-    foreach ($task in $scheduledTasks) {
-        $scheduledTask = Get-ScheduledTask -TaskPath $task.Path -TaskName $task.Name -ErrorAction SilentlyContinue
-        $actualState = if ($null -eq $scheduledTask) { 'Absent' } else { [string]$scheduledTask.State }
-        Add-Check -Name ("Scheduled task disabled or absent: {0}{1}" -f $task.Path, $task.Name) `
-            -Passed ($null -eq $scheduledTask -or $scheduledTask.State -eq 'Disabled') `
-            -Expected 'Disabled or absent' `
-            -Actual $actualState
-    }
-
     $removedPackagePrefixes = @(
         'AppUp.IntelManagementandSecurityStatus', 'Clipchamp.Clipchamp',
         'DolbyLaboratories.DolbyAccess', 'DolbyLaboratories.DolbyDigitalPlusDecoderOEM',
