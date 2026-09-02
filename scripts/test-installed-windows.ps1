@@ -137,10 +137,7 @@ if ($auditTiny11) {
     foreach ($logName in @(
         'Specialize.log',
         'DefaultUser.log',
-        'FirstLogon.log',
-        'RemovePackages.log',
-        'RemoveCapabilities.log',
-        'RemoveFeatures.log'
+        'FirstLogon.log'
     )) {
         $logPath = Join-Path 'C:\Windows\Setup\Scripts' $logName
         Add-Check -Name "Tiny11 setup log: $logName" `
@@ -168,6 +165,8 @@ if ($auditTiny11) {
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI'; Name = 'DisableAIDataAnalysis'; Value = 1 },
         @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI'; Name = 'DisableClickToDo'; Value = 1 },
         @{ Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\BitLocker'; Name = 'PreventDeviceEncryption'; Value = 1 },
+        @{ Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard'; Name = 'EnableVirtualizationBasedSecurity'; Value = 0 },
+        @{ Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity'; Name = 'Enabled'; Value = 0 },
         @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo'; Name = 'Enabled'; Value = 0 },
         @{ Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'; Name = 'TaskbarMn'; Value = 0 },
         @{ Path = 'HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot'; Name = 'TurnOffWindowsCopilot'; Value = 1 },
@@ -234,7 +233,7 @@ if ($auditTiny11) {
         -Actual $(if ($remainingPackages.Count) { $remainingPackages -join '; ' } else { 'None present' })
 
     $removedCapabilities = @(
-        'Print.Fax.Scan', 'Language.Handwriting', 'Browser.InternetExplorer', 'MathRecognizer',
+        'Language.Handwriting', 'Browser.InternetExplorer', 'MathRecognizer',
         'OneCoreUAP.OneSync', 'Microsoft.Windows.MSPaint', 'Microsoft.Windows.PowerShell.ISE',
         'App.Support.QuickAssist', 'Language.Speech', 'Language.TextToSpeech', 'App.StepsRecorder',
         'Hello.Face.18967', 'Hello.Face.Migration.18967', 'Hello.Face.20134',
@@ -284,10 +283,7 @@ foreach ($logPath in @(
     'C:\Windows\Panther\setuperr.log',
     'C:\Windows\Setup\Scripts\Specialize.log',
     'C:\Windows\Setup\Scripts\DefaultUser.log',
-    'C:\Windows\Setup\Scripts\FirstLogon.log',
-    'C:\Windows\Setup\Scripts\RemovePackages.log',
-    'C:\Windows\Setup\Scripts\RemoveCapabilities.log',
-    'C:\Windows\Setup\Scripts\RemoveFeatures.log'
+    'C:\Windows\Setup\Scripts\FirstLogon.log'
 )) {
     Copy-GuestLog -Path $logPath
 }

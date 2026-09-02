@@ -73,6 +73,7 @@ When enabled, the built ISO is processed through Tiny11 which:
 ### Post-Install (autounattend.xml)
 - OOBE bypass (local account, no Microsoft account required)
 - Additional app/capability/feature cleanup on first boot
+- Core isolation (VBS/HVCI) disabled
 - Privacy-focused defaults
 
 ---

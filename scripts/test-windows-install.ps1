@@ -676,10 +676,7 @@ try {
             'guest-setuperr.log',
             'guest-Specialize.log',
             'guest-DefaultUser.log',
-            'guest-FirstLogon.log',
-            'guest-RemovePackages.log',
-            'guest-RemoveCapabilities.log',
-            'guest-RemoveFeatures.log'
+            'guest-FirstLogon.log'
         )) {
             $source = Join-Path $ciMediaDirectory $name
             if (Test-Path -LiteralPath $source -PathType Leaf) {
