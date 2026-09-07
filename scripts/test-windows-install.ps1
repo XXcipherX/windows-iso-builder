@@ -161,6 +161,21 @@ function Send-QemuQmpCommand {
     }
 }
 
+function Test-TextFileMatches {
+    param(
+        [string]$Path,
+        [string]$Pattern
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    try {
+        return [regex]::IsMatch([System.IO.File]::ReadAllText($Path), $Pattern)
+    }
+    catch {
+        return $false
+    }
+}
+
 function Restore-GuestResultFromSerial {
     param(
         [string]$SerialPath,
@@ -605,9 +620,20 @@ try {
     $guestResultPath = Join-Path $ReportDirectory 'install-test-result.json'
     $guestResult = $null
     $timedOut = $false
+    $timeoutFailureMessage = $null
     $nextHeartbeatMinute = 1
+    $dvdBootPattern = 'BdsDxe:\s+starting Boot[0-9A-Fa-f]{4} "UEFI QEMU DVD-ROM'
+    $diskBootPattern = 'BdsDxe:\s+starting Boot[0-9A-Fa-f]{4} "Windows Boot Manager"'
+    $dvdBootObserved = $false
+    $diskBootObserved = $false
+    $bootKeyAttempts = 0
+    $bootKeyAttemptLimit = 5
+    $nextBootKeyAt = $null
+    $dvdBootTimeoutSeconds = 30
+    $diskBootTimeoutMinutes = 20
     while (-not $process.HasExited) {
-        $elapsed = (Get-Date) - $startedAt
+        $now = Get-Date
+        $elapsed = $now - $startedAt
         if (Restore-GuestResultFromSerial -SerialPath $serialLog -OutputPath $guestResultPath) {
             $guestResult = Get-Content -LiteralPath $guestResultPath -Raw | ConvertFrom-Json -ErrorAction Stop
             Assert-GuestResult -Result $guestResult
@@ -633,8 +659,41 @@ try {
             if (-not $process.WaitForExit(10000)) { $process.Kill($true) }
             break
         }
-        if ($elapsed.TotalMinutes -ge $TimeoutMinutes) {
+
+        if (-not $dvdBootObserved -and (Test-TextFileMatches -Path $serialLog -Pattern $dvdBootPattern)) {
+            $dvdBootObserved = $true
+            $nextBootKeyAt = $now.AddSeconds(1)
+            Write-Report 'UEFI DVD boot observed; sending a bounded boot-key sequence.'
+        }
+        if (-not $diskBootObserved -and (Test-TextFileMatches -Path $serialLog -Pattern $diskBootPattern)) {
+            $diskBootObserved = $true
+            Write-Report 'Windows Boot Manager started from the installed disk.'
+        }
+        # Keep boot input short and non-activating; Space can click Windows Setup's Cancel button.
+        if (
+            $dvdBootObserved -and
+            $bootKeyAttempts -lt $bootKeyAttemptLimit -and
+            $now -ge $nextBootKeyAt
+        ) {
+            [void](Send-QemuQmpCommand -Process $process -Command 'send-key' -CommandArguments @{
+                keys = @(@{ type = 'qcode'; data = 'x' })
+            })
+            $bootKeyAttempts++
+            $nextBootKeyAt = $now.AddSeconds(1)
+        }
+
+        if (-not $dvdBootObserved -and $elapsed.TotalSeconds -ge $dvdBootTimeoutSeconds) {
+            $timeoutFailureMessage = "OVMF did not report starting the Windows installation DVD within $dvdBootTimeoutSeconds seconds."
+        }
+        elseif (-not $diskBootObserved -and $elapsed.TotalMinutes -ge $diskBootTimeoutMinutes) {
+            $timeoutFailureMessage = "Windows Setup did not start Windows Boot Manager from the installed disk within $diskBootTimeoutMinutes minutes."
+        }
+        elseif ($elapsed.TotalMinutes -ge $TimeoutMinutes) {
+            $timeoutFailureMessage = "Windows did not return a valid COM1 first-boot audit result within $TimeoutMinutes minutes."
+        }
+        if ($timeoutFailureMessage) {
             $timedOut = $true
+            Write-Report $timeoutFailureMessage
             [void](Send-QemuQmpCommand -Process $process -Command 'screendump' -CommandArguments @{
                 filename = $timeoutScreenshot
                 format = 'png'
@@ -644,17 +703,17 @@ try {
             if (-not $process.WaitForExit(10000)) { $process.Kill($true) }
             break
         }
-        if ($elapsed.TotalSeconds -le 90) {
-            [void](Send-QemuQmpCommand -Process $process -Command 'send-key' -CommandArguments @{
-                keys = @(@{ type = 'qcode'; data = 'spc' })
-            })
-        }
         if ($elapsed.TotalMinutes -ge $nextHeartbeatMinute) {
             $diskBytes = if (Test-Path -LiteralPath $diskPath) { (Get-Item -LiteralPath $diskPath).Length } else { 0 }
             Write-Report "Installation test is still running ($nextHeartbeatMinute minute(s); qcow2=$([math]::Round($diskBytes / 1GB, 2)) GiB)..."
             $nextHeartbeatMinute++
         }
-        Start-Sleep -Seconds 2
+        if ($dvdBootObserved -and $bootKeyAttempts -lt $bootKeyAttemptLimit) {
+            Start-Sleep -Milliseconds 250
+        }
+        else {
+            Start-Sleep -Seconds 2
+        }
     }
 
     $process.WaitForExit()
@@ -692,7 +751,7 @@ try {
 
     if ($null -eq $guestResult) {
         if ($timedOut) {
-            throw "Windows did not return a valid COM1 first-boot audit result within $TimeoutMinutes minutes."
+            throw $timeoutFailureMessage
         }
         if ($process.ExitCode -ne 0) {
             throw "QEMU exited with code $($process.ExitCode) before returning a valid COM1 audit result."
