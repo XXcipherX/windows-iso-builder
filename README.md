@@ -9,9 +9,9 @@ Combines [UUP dump](https://uupdump.net) ISO assembly with [Tiny11](https://gith
 ## 🔄 Pipeline
 
 ```
-UUP dump API → Download UUP files → Build ISO → Finalize ISO → Upload artifact
-                                                     │
-                                      autounattend.xml + optional Tiny11
+UUP dump API → Download UUP files → Build ISO → Finalize ISO → Upload raw ISO artifact
+                                                     │                       ├→ optional ISO tests
+                                      autounattend.xml + optional Tiny11      └→ optional Yandex import
 ```
 
 1. **UUP dump** — fetches Windows update packages and builds a clean ISO
@@ -48,8 +48,26 @@ UUP dump API → Download UUP files → Build ISO → Finalize ISO → Upload ar
 | **ESD** | Use ESD compression | false |
 | **NetFx3** | Add .NET Framework 3.5 | false |
 | **Tiny11** | Apply Tiny11 optimization | **true** |
+| **Yandex Disk** | Privately upload the finished ISO and SHA256 sidecar to Yandex Disk | false |
 | **ISO test** | Quickly validate the x64 ISO and verify Windows PE boot in QEMU | false |
 | **Full install test** | Validate the ISO, install x64 Windows in QEMU, and audit the first boot | false |
+
+---
+
+## ☁️ Optional Yandex Disk Upload
+
+Enable **Yandex Disk** when starting the workflow to copy only that build's ISO and `.sha256` file to private application storage. The ISO is published as an uncompressed GitHub artifact first, then Yandex Disk imports it directly from GitHub through a temporary signed URL. The Actions runner does not download or re-upload the large ISO.
+
+The Yandex import runs as a separate job alongside any requested ISO tests. It verifies the remote file's exact size and SHA256 before uploading the small checksum sidecar. A Yandex failure is reported in that job's summary but does not discard the GitHub artifact or prevent the tests from running. The import job can be rerun without rebuilding the ISO.
+
+One-time setup:
+
+1. [Register a Yandex OAuth application](https://oauth.yandex.ru/client/new) for API access.
+2. Grant only `cloud_api:disk.app_folder` (access to the application's own Disk folder).
+3. Copy the application's Client ID, open `https://oauth.yandex.ru/authorize?response_type=token&client_id=<Client_ID>`, allow access, and copy the returned `access_token`. Keep it private.
+4. In the GitHub repository, open **Settings → Secrets and variables → Actions**, create the repository secret `YANDEX_DISK_TOKEN`, and paste the token as its value.
+
+Uploaded files remain private and appear inside the application's folder under **Apps** / **Приложения** in Yandex Disk. Rebuilding an ISO with the same filename replaces that file; the workflow never creates a public link. GitHub also keeps a separate small verification artifact containing the `.sha256` file and verification instructions.
 
 ---
 
@@ -178,7 +196,8 @@ windows-iso-builder/
 │   ├── test-windows-iso.ps1         # CI-only ISO and Windows PE smoke test
 │   ├── test-windows-install.ps1     # CI-only full installation orchestrator
 │   ├── test-installed-windows.ps1   # In-guest installed-state audit
-│   └── tiny11maker-headless.ps1     # Tiny11 optimizer
+│   ├── tiny11maker-headless.ps1     # Tiny11 optimizer
+│   └── upload-yandex-disk.ps1       # Optional GitHub-to-Yandex server-side import
 ├── AGENTS.md                        # Root pointer for IDE/CLI agents
 ├── uup-dump-get-windows-iso.ps1     # UUP dump ISO builder
 ├── CustomAppsList.txt               # UUP dump app selection

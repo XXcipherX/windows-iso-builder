@@ -20,6 +20,7 @@
 - `scripts/test-windows-iso.ps1` - Ubuntu CI-only x64 ISO validator. It checks boot files, verifies WIM/ESD metadata and integrity, and optionally boots Windows PE under UEFI QEMU using KVM when available and TCG otherwise, with a temporary raw FAT marker image and COM1 startup signal.
 - `scripts/test-windows-install.ps1` - Ubuntu CI-only full installation orchestrator. It creates a temporary answer-file overlay and sparse QEMU disk, requires KVM, waits for the installed guest audit, captures diagnostics, and deletes the virtual disk.
 - `scripts/test-installed-windows.ps1` - Windows guest-side first-logon audit used by the full installation test. It runs the production FirstLogon script and validates the expected installed and Tiny11 state.
+- `scripts/upload-yandex-disk.ps1` - opt-in GitHub Actions helper that gives Yandex Disk a temporary signed URL for the raw GitHub ISO artifact, waits for the server-side import, verifies its size and SHA256, and uploads the small checksum sidecar.
 
 ## Generated artifacts
 

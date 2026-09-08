@@ -67,6 +67,10 @@ pwsh -NoProfile -Command "[scriptblock]::Create((Get-Content -Raw .\uup-dump-get
 pwsh -NoProfile -Command "[scriptblock]::Create((Get-Content -Raw .\scripts\tiny11maker-headless.ps1)) | Out-Null"
 ```
 
+```powershell
+pwsh -NoProfile -Command "[scriptblock]::Create((Get-Content -Raw .\scripts\upload-yandex-disk.ps1)) | Out-Null"
+```
+
 The repository has an optional ISO validation and Windows PE boot smoke test in GitHub Actions. It is resource-intensive and should be run intentionally.
 
 The optional ISO and QEMU smoke test is implemented by `scripts/test-windows-iso.ps1` for an ephemeral `ubuntu-24.04` GitHub runner. Do not invoke it during ordinary local validation: it mounts the ISO through `sudo`, requires `wimtools`, QEMU, and OVMF, and can consume substantial CPU time.

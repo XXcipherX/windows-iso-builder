@@ -15,6 +15,7 @@ run-name: >
   ${{ inputs.esd && 'ESD' || '' }}
   ${{ inputs.netfx3 && 'NETFX3' || '' }}
   ${{ inputs.tiny11 && 'TINY11' || '' }}
+  ${{ inputs.upload_yandex_disk && 'YANDEX-DISK' || '' }}
   ${{ inputs.test_iso && 'ISO-TEST' || '' }}
   ${{ inputs.test_install && 'INSTALL-TEST' || '' }}
 
@@ -108,6 +109,11 @@ on:
         type: boolean
         required: true
         default: true
+      upload_yandex_disk:
+        description: "Upload the finished ISO privately to Yandex Disk"
+        type: boolean
+        required: true
+        default: false
       test_iso:
         description: "Run quick ISO validation and Windows PE boot (skipped by full installation test)"
         type: boolean
@@ -126,6 +132,9 @@ jobs:
       contents: read
     outputs:
       iso-artifact-id: ${{ steps.upload_iso_artifact.outputs.artifact-id }}
+      iso-name: ${{ steps.prepare_artifact.outputs.iso-name }}
+      iso-size: ${{ steps.prepare_artifact.outputs.iso-size }}
+      iso-sha256: ${{ steps.prepare_artifact.outputs.iso-sha256 }}
 
     steps:
       - name: Checkout
@@ -244,20 +253,19 @@ jobs:
         env:
           BUILD_REVISION: ${{ inputs.revision }}
         run: |
+          # The raw artifact upload calculates the final ISO digest while streaming it.
           $splat = @{
             windowsTargetName    = '${{ steps.map.outputs.version }}'
             destinationDirectory = 'c:/output'
             architecture         = '${{ inputs.architecture }}'
             edition              = '${{ inputs.edition }}'
             lang                 = '${{ steps.map.outputs.lang }}'
+            SkipChecksum         = $true
           }
 
           # If Tiny11 is enabled, skip UUP dump ESD compression (Tiny11 re-compresses it anyway)
           if ('${{ steps.map.outputs.uup_esd }}' -eq 'true') { $splat.esd = $true }
           if ('${{ inputs.netfx3 }}' -eq 'true') { $splat.netfx3 = $true }
-          if ('${{ inputs.tiny11 }}' -eq 'true') {
-            $splat.SkipChecksum = $true
-          }
 
           if (-not [string]::IsNullOrWhiteSpace($env:BUILD_REVISION)) {
             $splat.revision = $env:BUILD_REVISION
@@ -350,29 +358,28 @@ jobs:
           if (Test-Path $originalIso) {
             Remove-Item -Path $originalIso -Force
           }
-          if (Test-Path "$originalIso.sha256.txt") {
-            Remove-Item -Path "$originalIso.sha256.txt" -Force
-          }
-
-          # Recalculate checksum for the optimized ISO
-          Write-Output "Recalculating checksum for optimized ISO..."
-          $newChecksum = (Get-FileHash -Algorithm SHA256 $newIsoPath).Hash.ToLowerInvariant()
-          Set-Content -Encoding ascii -NoNewline -Path "$newIsoPath.sha256.txt" -Value $newChecksum
 
           $sizeGB = [math]::Round((Get-Item $newIsoPath).Length / 1GB, 2)
           Write-Output "Tiny11 ISO finalized: $isoName (${sizeGB}GB)"
-          Write-Output "SHA256: $newChecksum"
 
           # Update env for summary and artifact upload
           echo "ISO_NAME=$isoName" >> $env:GITHUB_ENV
           echo "ISO_PATH=$newIsoPath" >> $env:GITHUB_ENV
-          echo "ISO_CHECKSUM=$newChecksum" >> $env:GITHUB_ENV
 
       # ============================================================
       # STAGE 3: Upload & Summary
       # ============================================================
 
+      - name: Upload ISO artifact
+        id: upload_iso_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: c:/output/*.ISO
+          archive: false
+          if-no-files-found: error
+
       - name: Generate verification instructions
+        id: prepare_artifact
         shell: pwsh
         run: |
           $isoPath = $env:ISO_PATH
@@ -380,9 +387,12 @@ jobs:
           $isoName = Split-Path $isoPath -Leaf
           
           Write-Output "Preparing verification files for $isoName..."
-          
-          # Reuse the SHA256 checksum that was already calculated in STAGE 1 or STAGE 2
-          $sha256 = (Get-Content "$isoPath.sha256.txt" -Raw).Trim()
+
+          # A direct (archive: false) artifact digest is the SHA256 of the ISO itself.
+          $sha256 = '${{ steps.upload_iso_artifact.outputs.artifact-digest }}'.Trim().ToLowerInvariant()
+          if ($sha256 -notmatch '^[0-9a-f]{64}$') {
+            throw "GitHub did not return a valid SHA256 digest for the ISO artifact: '$sha256'."
+          }
           Set-Content -Encoding ascii -Path "$isoDir\$isoName.sha256" -Value "$sha256 *$isoName"
           
           $instructions = @"
@@ -398,16 +408,18 @@ jobs:
           "@
           Set-Content -Encoding utf8 -Path "$isoDir\verify_checksums.txt" -Value $instructions
 
-      - name: Upload ISO artifact
-        id: upload_iso_artifact
+          $isoSize = (Get-Item -LiteralPath $isoPath).Length
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Value "iso-name=$isoName"
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Value "iso-size=$isoSize"
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Value "iso-sha256=$sha256"
+
+      - name: Upload verification files
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.ISO_NAME }}
+          name: ${{ env.ISO_NAME }}-verification
           path: |
-            c:/output/*.ISO
             c:/output/*.sha256
             c:/output/verify_checksums.txt
-          compression-level: 0
           if-no-files-found: error
 
       - name: Build summary
@@ -419,8 +431,7 @@ jobs:
           $artifactUrl = '${{ steps.upload_iso_artifact.outputs.artifact-url }}'
           $summaryName = "Windows 11 ${{ inputs.edition }} $($iso.version)"
 
-          # Use Tiny11 checksum if available, otherwise use UUP dump checksum
-          $checksum = if ($env:ISO_CHECKSUM) { $env:ISO_CHECKSUM } else { $iso.checksum }
+          $checksum = '${{ steps.prepare_artifact.outputs.iso-sha256 }}'
 
           $optsRow = $null
           $buildOptions = @()
@@ -448,6 +459,11 @@ jobs:
             $tiny11Row = "| Tiny11 | ✅ Applied (debloat + registry tweaks + bypass) |"
           }
 
+          $yandexDiskRow = ""
+          if ('${{ inputs.upload_yandex_disk }}' -eq 'true') {
+            $yandexDiskRow = '| Yandex Disk | ⏳ Server-side import runs in the separate Yandex Disk job |'
+          }
+
           Add-Content $env:GITHUB_STEP_SUMMARY @"
           ### FILE INFO:
           | Property | Value |
@@ -463,11 +479,70 @@ jobs:
           if ($tiny11Row) {
             Add-Content $env:GITHUB_STEP_SUMMARY $tiny11Row
           }
+          if ($yandexDiskRow) {
+            Add-Content $env:GITHUB_STEP_SUMMARY $yandexDiskRow
+          }
 
           Add-Content $env:GITHUB_STEP_SUMMARY @"
           | Checksum | $checksum |
           | Iso | [$env:ISO_NAME]($artifactUrl) |
           | UUP dump | [$($iso.title)]($($iso.uupDump.downloadUrl)) |
+          "@
+
+  upload_yandex_disk:
+    name: Import ISO to Yandex Disk
+    if: ${{ inputs.upload_yandex_disk }}
+    needs: build
+    concurrency:
+      group: yandex-disk-${{ needs.build.outputs.iso-name }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Import ISO from GitHub to Yandex Disk
+        id: yandex_import
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISO_ARTIFACT_ID: ${{ needs.build.outputs.iso-artifact-id }}
+          ISO_NAME: ${{ needs.build.outputs.iso-name }}
+          ISO_SIZE: ${{ needs.build.outputs.iso-size }}
+          ISO_SHA256: ${{ needs.build.outputs.iso-sha256 }}
+          YANDEX_DISK_TOKEN: ${{ secrets.YANDEX_DISK_TOKEN }}
+        run: |
+          ./scripts/upload-yandex-disk.ps1 `
+            -ArtifactId ([long] $env:ISO_ARTIFACT_ID) `
+            -ISOName $env:ISO_NAME `
+            -ExpectedSize ([long] $env:ISO_SIZE) `
+            -ExpectedSHA256 $env:ISO_SHA256
+
+      - name: Yandex Disk summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          if ('${{ steps.yandex_import.outcome }}' -eq 'success') {
+            $status = '✅ Imported and verified'
+            $location = '`${{ steps.yandex_import.outputs.remote_path }}`'
+          } else {
+            $status = '❌ Import failed; the GitHub ISO artifact remains available'
+            $location = 'See the import step log and rerun this job'
+          }
+
+          Add-Content $env:GITHUB_STEP_SUMMARY @"
+          ### Yandex Disk
+
+          | Property | Value |
+          | :--- | :--- |
+          | Status | $status |
+          | ISO | $location |
           "@
 
   test_iso:

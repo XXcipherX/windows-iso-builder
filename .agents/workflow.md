@@ -16,6 +16,7 @@ Main inputs:
 - `esd`: request ESD compression; default `false`.
 - `netfx3`: include .NET Framework 3.5; default `false`.
 - `tiny11`: run Tiny11 optimization; default `true`.
+- `upload_yandex_disk`: privately upload the final ISO and checksum to Yandex Disk application storage; default `false`.
 - `test_iso`: after artifact upload, run a quick x64 ISO validation and boot Windows PE in QEMU; skipped when `test_install=true`; default `false`.
 - `test_install`: after artifact upload, validate the x64 ISO structure, install Windows in QEMU/KVM, and audit first boot; default `false`.
 
@@ -36,11 +37,12 @@ The workflow chooses the runner from the architecture:
    - UUP ESD compression is enabled only when `esd=true` and `tiny11=false`, because Tiny11 recompresses later when requested.
 3. Free disk space on the runner.
 4. Build the Windows ISO through `uup-dump-get-windows-iso.ps1`. It prepares `autounattend.xml` for the selected architecture and edition, asks the downloaded converter to retain its completed media folder with `SkipISO=1`, adds the answer file, and creates the ISO once with the converter's bundled `cdimage.exe`.
-5. If `tiny11=true`, run `scripts/tiny11maker-headless.ps1`, which carries the same prepared answer file into the `_Tiny11.iso` and recalculates SHA256.
-6. Generate verification instructions and upload the ISO and checksum artifacts.
-7. Write a GitHub step summary with build details, checksum, artifact link, and UUP dump source link.
-8. If `test_iso=true` and `test_install=false`, download the artifact in a separate Ubuntu job, verify its boot files and WIM/ESD integrity, then wait up to 20 minutes for a Windows PE startup signal from QEMU and verify the marker returned on a raw FAT image after clean shutdown.
-9. If `test_install=true` for x64, download the artifact in a separate Ubuntu job, free unused runner SDKs, validate the ISO structure and WIM/ESD integrity, install Windows to a sparse QEMU disk without a redundant Windows PE boot, run the guest audit after first logon, upload compact diagnostics, and delete the virtual disk.
+5. If `tiny11=true`, run `scripts/tiny11maker-headless.ps1`, which carries the same prepared answer file into the `_Tiny11.iso`, then move and rename that final ISO in the output directory.
+6. Upload the ISO as a raw uncompressed GitHub artifact, use the action's SHA256 digest to generate verification instructions, and upload the checksum and instructions as a separate small artifact.
+7. Write a GitHub step summary with build details, checksum, raw artifact link, and UUP dump source link.
+8. If `upload_yandex_disk=true`, start a separate Ubuntu job that gives Yandex Disk a temporary signed GitHub artifact URL, polls the server-side import, verifies the remote size and SHA256, and uploads the small `.sha256` sidecar. Imports targeting the same ISO name are serialized to avoid conflicting overwrites.
+9. If `test_iso=true` and `test_install=false`, download the raw ISO artifact in a separate Ubuntu job, verify its boot files and WIM/ESD integrity, then wait up to 20 minutes for a Windows PE startup signal from QEMU and verify the marker returned on a raw FAT image after clean shutdown.
+10. If `test_install=true` for x64, download the raw ISO artifact in a separate Ubuntu job, free unused runner SDKs, validate the ISO structure and WIM/ESD integrity, install Windows to a sparse QEMU disk without a redundant Windows PE boot, run the guest audit after first logon, upload compact diagnostics, and delete the virtual disk.
 
 ## Existing ISO validation
 
@@ -56,6 +58,8 @@ This separately triggered workflow accepts a direct HTTPS ISO URL, an optional S
 - The Tiny11 output is staged through a temporary path before replacing the final ISO path.
 - Every workflow-built ISO contains a root `autounattend.xml`. Its temporary copy is adjusted for x64/ARM64 and Pro/Home, placed in the converter's completed media folder before ISO creation, and carried forward by Tiny11 when enabled.
 - The workflow expects output artifacts under `c:/output`.
+- The ISO artifact uses `actions/upload-artifact@v7` with `archive: false`; verification files are kept in a separate small artifact. The v8 download action used by the tests accepts the raw artifact.
+- Yandex Disk import is opt-in and uses the `YANDEX_DISK_TOKEN` repository secret. The token should have only `cloud_api:disk.app_folder`; files remain private under `app:/` and replace same-named files. The separate import job passes Yandex a short-lived signed GitHub URL instead of relaying ISO bytes through the runner, verifies the result, and cannot delay or block sibling ISO tests.
 - ISO testing supports x64 media only, uses KVM when the runner exposes `/dev/kvm`, and falls back to TCG software emulation otherwise.
 - The quick Windows PE boot test uses a temporary raw FAT image instead of QEMU's experimental writable VVFAT backend. Windows PE writes the marker, signals completion over COM1, and shuts down before the runner mounts the FAT image read-only.
 - Full installation testing includes structural ISO and WIM/ESD validation. If both test checkboxes are selected, the standalone Windows PE boot test is skipped rather than duplicating the ISO download and boot coverage.
