@@ -422,9 +422,13 @@ function Get-WindowsIso($name, $destinationDirectory) {
   if (Test-Path $customAppsSource) { Write-CleanLine "Copying CustomAppsList.txt to build directory..."; Copy-Item -Path $customAppsSource -Destination $customAppsDest -Force } else { Write-CleanLine "WARNING: CustomAppsList.txt not found, skipping." }
 
   $convertConfig = (Get-Content $buildDirectory/ConvertConfig.ini) `
+    -replace '^(AutoStart\s*)=.*','$1=1' `
     -replace '^(AutoExit\s*)=.*','$1=1' `
+    -replace '^(AddUpdates\s*)=.*','$1=1' `
     -replace '^(ResetBase\s*)=.*','$1=1' `
     -replace '^(Cleanup\s*)=.*','$1=1' `
+    -replace '^(SkipApps\s*)=.*','$1=0' `
+    -replace '^(StubAppsFull\s*)=.*','$1=1' `
     -replace '^(CustomList\s*)=.*','$1=1' `
     -replace '^(SkipEdge\s*)=.*','$1=1' `
     -replace '^(UpdtBootFiles\s*)=.*','$1=1' `
@@ -434,8 +438,25 @@ function Get-WindowsIso($name, $destinationDirectory) {
   if ($esd) { $convertConfig = $convertConfig -replace '^(wim2esd\s*)=.*', '$1=1'; $tag += ".E" }
   if ($netfx3) { $convertConfig = $convertConfig -replace '^(NetFx3\s*)=.*', '$1=1'; $tag += ".N" }
   Set-Content -Encoding ascii -Path $buildDirectory/ConvertConfig.ini -Value $convertConfig
-  if (-not (Select-String -LiteralPath "$buildDirectory/ConvertConfig.ini" -Pattern '^UpdtBootFiles\s*=\s*1\s*$' -Quiet)) {
-    throw "Downloaded UUP converter does not expose an active UpdtBootFiles=1 setting in ConvertConfig.ini."
+
+  $requiredConvertSettings = [ordered]@{
+    AutoStart     = '1'
+    AutoExit      = '1'
+    AddUpdates    = '1'
+    Cleanup       = '1'
+    ResetBase     = '1'
+    SkipApps      = '0'
+    StubAppsFull  = '1'
+    CustomList    = '1'
+    SkipEdge      = '1'
+    UpdtBootFiles = '1'
+    SkipISO       = '1'
+  }
+  foreach ($setting in $requiredConvertSettings.GetEnumerator()) {
+    $pattern = '^{0}\s*=\s*{1}\s*$' -f [regex]::Escape($setting.Key), [regex]::Escape($setting.Value)
+    if (-not (Select-String -LiteralPath "$buildDirectory/ConvertConfig.ini" -Pattern $pattern -Quiet)) {
+      throw "Downloaded UUP converter does not expose the required $($setting.Key)=$($setting.Value) setting in ConvertConfig.ini."
+    }
   }
 
   Write-CleanLine "Creating the $title iso file inside the $buildDirectory directory"
