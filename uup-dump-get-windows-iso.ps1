@@ -427,12 +427,16 @@ function Get-WindowsIso($name, $destinationDirectory) {
     -replace '^(Cleanup\s*)=.*','$1=1' `
     -replace '^(CustomList\s*)=.*','$1=1' `
     -replace '^(SkipEdge\s*)=.*','$1=1' `
+    -replace '^(UpdtBootFiles\s*)=.*','$1=1' `
     -replace '^(SkipISO\s*)=.*','$1=1'
 
   $tag = ""
   if ($esd) { $convertConfig = $convertConfig -replace '^(wim2esd\s*)=.*', '$1=1'; $tag += ".E" }
   if ($netfx3) { $convertConfig = $convertConfig -replace '^(NetFx3\s*)=.*', '$1=1'; $tag += ".N" }
   Set-Content -Encoding ascii -Path $buildDirectory/ConvertConfig.ini -Value $convertConfig
+  if (-not (Select-String -LiteralPath "$buildDirectory/ConvertConfig.ini" -Pattern '^UpdtBootFiles\s*=\s*1\s*$' -Quiet)) {
+    throw "Downloaded UUP converter does not expose an active UpdtBootFiles=1 setting in ConvertConfig.ini."
+  }
 
   Write-CleanLine "Creating the $title iso file inside the $buildDirectory directory"
   $downloadExitCode = $null
