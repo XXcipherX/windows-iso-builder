@@ -408,7 +408,37 @@ try {
 
     $answerFile = Resolve-IsoEntry -Root $mountDirectory -RelativePath 'autounattend.xml' -Optional
     if ($answerFile) {
-        [void][xml](Get-Content -LiteralPath $answerFile -Raw)
+        $answerDocument = [System.Xml.XmlDocument]::new()
+        $answerDocument.Load($answerFile)
+
+        if ($answerDocument.GetElementsByTagName('Extensions', 'https://schneegans.de/windows/unattend-generator/').Count -gt 0) {
+            $answerBytes = [System.IO.File]::ReadAllBytes($answerFile)
+            if (
+                $answerBytes.Length -ge 3 -and
+                $answerBytes[0] -eq 0xEF -and
+                $answerBytes[1] -eq 0xBB -and
+                $answerBytes[2] -eq 0xBF
+            ) {
+                throw 'Root autounattend.xml has a UTF-8 BOM; the generated answer file must use BOM-less ASCII serialization.'
+            }
+
+            $nonAsciiOffset = -1
+            for ($index = 0; $index -lt $answerBytes.Length; $index++) {
+                if ($answerBytes[$index] -gt 0x7F) {
+                    $nonAsciiOffset = $index
+                    break
+                }
+            }
+            if ($nonAsciiOffset -ge 0) {
+                throw "Root autounattend.xml contains a non-ASCII byte at offset $nonAsciiOffset; use XML character references instead."
+            }
+
+            $answerText = [System.Text.Encoding]::ASCII.GetString($answerBytes)
+            if (-not $answerText.StartsWith('<?xml version="1.0" encoding="utf-8"?>', [System.StringComparison]::Ordinal)) {
+                throw 'Root autounattend.xml does not start with the expected UTF-8 XML declaration.'
+            }
+            Write-Report 'Root autounattend.xml uses Setup-compatible ASCII serialization without a BOM.'
+        }
         Write-Report 'Root autounattend.xml is well-formed XML.'
     }
     else {
