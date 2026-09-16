@@ -105,6 +105,33 @@ function Get-EditionName($e) {
   }
 }
 
+# Match Schneegans UnattendGenerator.Serialize: keep the UTF-8 declaration, but write ASCII without a BOM.
+function Write-UnattendDocument([System.Xml.XmlDocument]$Document, [string]$OutputPath) {
+  $stream = [System.IO.MemoryStream]::new()
+  try {
+    $headerWriter = [System.IO.StreamWriter]::new($stream, [System.Text.Encoding]::ASCII, 1024, $true)
+    try {
+      $headerWriter.Write('<?xml version="1.0" encoding="utf-8"?>' + "`r`n")
+    } finally {
+      $headerWriter.Dispose()
+    }
+
+    $writerSettings = [System.Xml.XmlWriterSettings]::new()
+    $writerSettings.Encoding = [System.Text.Encoding]::ASCII
+    $writerSettings.OmitXmlDeclaration = $true
+    $writerSettings.CloseOutput = $true
+    $writerSettings.Indent = $true
+    $writerSettings.IndentChars = "`t"
+    $writerSettings.NewLineChars = "`r`n"
+    $writer = [System.Xml.XmlWriter]::Create($stream, $writerSettings)
+    try { $Document.Save($writer) } finally { $writer.Dispose() }
+
+    [System.IO.File]::WriteAllBytes($OutputPath, $stream.ToArray())
+  } finally {
+    $stream.Dispose()
+  }
+}
+
 function New-BuildAnswerFile([string]$OutputPath) {
   $document = [System.Xml.XmlDocument]::new()
   $document.PreserveWhitespace = $true
@@ -122,7 +149,7 @@ function New-BuildAnswerFile([string]$OutputPath) {
   }
   $keyNode.InnerText = $productKeys[$edition.ToLowerInvariant()]
 
-  $document.Save($OutputPath)
+  Write-UnattendDocument -Document $document -OutputPath $OutputPath
 }
 
 $TARGETS = @{

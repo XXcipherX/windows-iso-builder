@@ -321,6 +321,38 @@ function New-MinimalAnswerFile {
     return $document
 }
 
+# Match Schneegans UnattendGenerator.Serialize: keep the UTF-8 declaration, but write ASCII without a BOM.
+function Write-UnattendDocument {
+    param(
+        [xml]$Document,
+        [string]$OutputPath
+    )
+
+    $stream = [System.IO.MemoryStream]::new()
+    try {
+        $headerWriter = [System.IO.StreamWriter]::new($stream, [System.Text.Encoding]::ASCII, 1024, $true)
+        try {
+            $headerWriter.Write('<?xml version="1.0" encoding="utf-8"?>' + "`r`n")
+        } finally {
+            $headerWriter.Dispose()
+        }
+
+        $writerSettings = [System.Xml.XmlWriterSettings]::new()
+        $writerSettings.Encoding = [System.Text.Encoding]::ASCII
+        $writerSettings.OmitXmlDeclaration = $true
+        $writerSettings.CloseOutput = $true
+        $writerSettings.Indent = $true
+        $writerSettings.IndentChars = "`t"
+        $writerSettings.NewLineChars = "`r`n"
+        $writer = [System.Xml.XmlWriter]::Create($stream, $writerSettings)
+        try { $Document.Save($writer) } finally { $writer.Dispose() }
+
+        [System.IO.File]::WriteAllBytes($OutputPath, $stream.ToArray())
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 function Set-CiAnswerFile {
     param(
         [xml]$Document,
@@ -453,11 +485,7 @@ function Set-CiAnswerFile {
     [void](Add-UnattendElement -Document $Document -Parent $command -Name 'CommandLine' -Value $commandLine)
     [void]$shell.InsertBefore($autoLogon, $oobe)
 
-    $writerSettings = [System.Xml.XmlWriterSettings]::new()
-    $writerSettings.Encoding = [System.Text.UTF8Encoding]::new($false)
-    $writerSettings.Indent = $true
-    $writer = [System.Xml.XmlWriter]::Create($OutputPath, $writerSettings)
-    try { $Document.Save($writer) } finally { $writer.Dispose() }
+    Write-UnattendDocument -Document $Document -OutputPath $OutputPath
     [void][xml](Get-Content -LiteralPath $OutputPath -Raw)
 }
 
