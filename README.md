@@ -9,14 +9,15 @@ Combines [UUP dump](https://uupdump.net) ISO assembly with [Tiny11](https://gith
 ## 🔄 Pipeline
 
 ```
-UUP dump API → Download UUP files → Build ISO → Finalize ISO → Upload raw ISO artifact
-                                                     │                       ├→ optional ISO tests
-                                      autounattend.xml + optional Tiny11      └→ optional Yandex import
+UUP dump API → Download UUP files → Prepare Windows media ┬→ Build ISO ─────────→ Upload raw ISO artifact
+                                                          └→ Tiny11 → Build ISO ┤  ├→ optional ISO tests
+                                               autounattend.xml is added once ┘  └→ optional Yandex import
 ```
 
-1. **UUP dump** — fetches Windows update packages and builds a clean ISO
+1. **UUP dump** — fetches Windows update packages and prepares the Windows media
 2. **Tiny11** — removes bloatware, applies registry tweaks, bypasses system requirements
-3. **Unattended setup** — embeds `autounattend.xml` in every final ISO
+3. **ISO creation** — creates one final ISO, after Tiny11 when optimization is enabled
+4. **Unattended setup** — embeds `autounattend.xml` in every final ISO
 
 ---
 
@@ -73,7 +74,7 @@ Uploaded files remain private and appear inside the application's folder under *
 
 ## 🛠️ Tiny11 Optimization
 
-When enabled, the built ISO is processed through Tiny11 which:
+When enabled, the prepared Windows media is processed directly through Tiny11 before the single final ISO is created. Tiny11:
 
 ### Removes Bloatware (40+ apps)
 - Teams, OneDrive, Edge, Copilot, Recall
@@ -92,7 +93,7 @@ When enabled, the built ISO is processed through Tiny11 which:
 
 ## 🧩 Unattended Setup (autounattend.xml)
 
-Every ISO produced by `uup-dump-get-windows-iso.ps1`, including the **Build Windows** workflow, contains `autounattend.xml` at its root whether Tiny11 is enabled or not. The builder prepares the copy for the selected x64/ARM64 architecture and Pro/Home edition, while the tracked file remains the x64 Pro template.
+Every final ISO produced by the **Build Windows** workflow contains `autounattend.xml` at its root whether Tiny11 is enabled or not. The builder prepares the copy for the selected x64/ARM64 architecture and Pro/Home edition, while the tracked file remains the x64 Pro template.
 
 During Windows Setup it provides:
 
@@ -161,6 +162,9 @@ Use `-revision` with a full build number matching the selected target, such as `
 
 # Option B: Pass mounted drive letter
 .\scripts\tiny11maker-headless.ps1 -ISO E -INDEX 1
+
+# Option C: Process a writable media directory in place (the directory is retained)
+.\scripts\tiny11maker-headless.ps1 -MediaPath "C:\path\to\windows-media" -Architecture x64 -INDEX 1
 
 # With custom output path
 .\scripts\tiny11maker-headless.ps1 -ISOPath "C:\path\to\windows.iso" -INDEX 1 -OutputPath "C:\output\optimized.iso"

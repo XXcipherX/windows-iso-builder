@@ -5,7 +5,7 @@
 - `README.md` - human-facing project overview and usage examples.
 - `.gitignore` - excludes large generated images, build directories, logs, checksums, and editor/OS noise.
 - `LICENSE` - project license.
-- `uup-dump-get-windows-iso.ps1` - UUP dump ISO builder. It queries the UUP dump API, selects a build, prepares the architecture/edition-specific answer file, runs the downloaded converter with `SkipISO=1`, creates the ISO once from the prepared media folder, writes metadata/checksum files, and exports `ISO_NAME` and `ISO_PATH` for GitHub Actions.
+- `uup-dump-get-windows-iso.ps1` - UUP dump media builder. It queries the UUP dump API, selects a build, prepares the architecture/edition-specific answer file, and runs the downloaded converter with `SkipISO=1`. It either creates a final ISO directly or exports the prepared media directory for Tiny11, together with metadata and GitHub Actions environment values.
 - `CustomAppsList.txt` - app allowlist for UUP conversion when `CustomList=1` is set in the generated `ConvertConfig.ini`.
 - `autounattend.xml` - unattended Windows setup configuration and embedded PowerShell cleanup scripts. It handles OOBE/privacy and core-isolation defaults plus post-install removal of selected packages, capabilities, features, and scheduled update prompts.
 
@@ -16,7 +16,7 @@
 
 ## Scripts
 
-- `scripts/tiny11maker-headless.ps1` - CI-friendly Tiny11 optimization script. It accepts either a mounted ISO drive letter or an ISO path, processes a selected Windows image index, removes provisioned apps and selected system components, applies registry tweaks, optionally exports `install.esd`, builds a bootable ISO, and cleans up temporary files.
+- `scripts/tiny11maker-headless.ps1` - CI-friendly Tiny11 optimization script. It accepts a mounted ISO drive letter, an ISO path, or a writable prepared media directory, processes a selected Windows image index, removes provisioned apps and selected system components, applies registry tweaks, optionally exports `install.esd`, builds an architecture-appropriate bootable ISO, and cleans up temporary files.
 - `scripts/test-windows-iso.ps1` - Ubuntu CI-only x64 ISO validator. It checks boot files, verifies WIM/ESD metadata and integrity, and optionally boots Windows PE under UEFI QEMU using KVM when available and TCG otherwise, with a temporary raw FAT marker image and COM1 startup signal.
 - `scripts/test-windows-install.ps1` - Ubuntu CI-only full installation orchestrator. It creates a temporary answer-file overlay and sparse QEMU disk, requires KVM, waits for the installed guest audit, captures diagnostics, and deletes the virtual disk.
 - `scripts/test-installed-windows.ps1` - Windows guest-side first-logon audit used by the full installation test. It runs the production FirstLogon script and validates the expected installed and Tiny11 state.

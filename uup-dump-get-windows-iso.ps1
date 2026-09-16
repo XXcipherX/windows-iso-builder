@@ -10,7 +10,8 @@ param(
   [switch]$esd,
   [switch]$netfx3,
   [string]$revision,
-  [switch]$SkipChecksum
+  [switch]$SkipChecksum,
+  [switch]$PrepareMediaOnly
 )
 
 Set-StrictMode -Version Latest
@@ -486,7 +487,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
     }
   }
 
-  Write-CleanLine "Creating the $title iso file inside the $buildDirectory directory"
+  Write-CleanLine "Preparing the $title Windows media inside the $buildDirectory directory"
   $downloadExitCode = $null
   Push-Location $buildDirectory
   try {
@@ -538,35 +539,60 @@ function Get-WindowsIso($name, $destinationDirectory) {
 
   $mediaDirectory = $mediaDirectories[0]
   Copy-Item -LiteralPath $preparedAnswerPath -Destination (Join-Path $mediaDirectory.FullName 'autounattend.xml') -Force
-  $sourceIsoPath = "$($mediaDirectory.FullName).ISO"
-  $cdimagePath = Join-Path $buildDirectory 'bin\cdimage.exe'
-  $bootData = if ($architecture -eq 'arm64') {
-    "-bootdata:1#pEF,e,b$($mediaDirectory.FullName)\efi\Microsoft\boot\efisys.bin"
-  } else {
-    "-bootdata:2#p0,e,b$($mediaDirectory.FullName)\boot\etfsboot.com#pEF,e,b$($mediaDirectory.FullName)\efi\Microsoft\boot\efisys.bin"
-  }
-  $volumePrefix = if ($edition -eq 'home') { 'CCRA' } else { 'CPRA' }
-  $volumeArch = if ($architecture -eq 'arm64') { 'A64' } else { 'X64' }
-  $volumeLabel = "${volumePrefix}_${volumeArch}FRE_$($lang.ToUpperInvariant())_DV9"
-
-  Write-CleanLine "Creating ISO with embedded autounattend.xml"
-  & $cdimagePath $bootData -o -m -u2 -udfver102 "-l$volumeLabel" $mediaDirectory.FullName $sourceIsoPath
-  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $sourceIsoPath -PathType Leaf)) {
-    throw "cdimage.exe failed to create $sourceIsoPath"
-  }
-
-  $isoFiles = @(Resolve-Path "$buildDirectory/*.iso" -ErrorAction SilentlyContinue)
-  if ($isoFiles.Count -eq 0) { throw "No ISO file found in $buildDirectory after build" }
-  if ($isoFiles.Count -gt 1) { Write-CleanLine "WARN: Multiple ISO files found in ${buildDirectory}: $($isoFiles -join ', '). Using the first one." }
-  $sourceIsoPath = $isoFiles[0]
-  $IsoName = Split-Path $sourceIsoPath -leaf
-
+  $IsoName = "$($mediaDirectory.Name).ISO"
+  $preparedMediaPath = $null
+  $fullIsoPath = $null
   $isoChecksum = $null
-  if ($SkipChecksum) {
-    Write-CleanLine "Skipping checksum for intermediate ISO; the final ISO checksum will be calculated later."
+
+  if ($PrepareMediaOnly) {
+    $preparedMediaPath = "$buildDirectory.media"
+    if (Test-Path -LiteralPath $preparedMediaPath) {
+      throw "Prepared media destination already exists: $preparedMediaPath"
+    }
+
+    Write-CleanLine "Keeping prepared Windows media for Tiny11 without creating an intermediate ISO"
+    Move-Item -LiteralPath $mediaDirectory.FullName -Destination $preparedMediaPath
+    $preparedMediaPath = (Resolve-Path -LiteralPath $preparedMediaPath).Path
   } else {
-    Write-CleanLine "Getting the $sourceIsoPath checksum"
-    $isoChecksum = (Get-FileHash -Algorithm SHA256 $sourceIsoPath).Hash.ToLowerInvariant()
+    $sourceIsoPath = "$($mediaDirectory.FullName).ISO"
+    $cdimagePath = Join-Path $buildDirectory 'bin\cdimage.exe'
+    $bootData = if ($architecture -eq 'arm64') {
+      "-bootdata:1#pEF,e,b$($mediaDirectory.FullName)\efi\Microsoft\boot\efisys.bin"
+    } else {
+      "-bootdata:2#p0,e,b$($mediaDirectory.FullName)\boot\etfsboot.com#pEF,e,b$($mediaDirectory.FullName)\efi\Microsoft\boot\efisys.bin"
+    }
+    $volumePrefix = if ($edition -eq 'home') { 'CCRA' } else { 'CPRA' }
+    $volumeArch = if ($architecture -eq 'arm64') { 'A64' } else { 'X64' }
+    $volumeLabel = "${volumePrefix}_${volumeArch}FRE_$($lang.ToUpperInvariant())_DV9"
+
+    Write-CleanLine "Creating ISO with embedded autounattend.xml"
+    & $cdimagePath $bootData -o -m -u2 -udfver102 "-l$volumeLabel" $mediaDirectory.FullName $sourceIsoPath
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $sourceIsoPath -PathType Leaf)) {
+      throw "cdimage.exe failed to create $sourceIsoPath"
+    }
+
+    $isoFiles = @(Resolve-Path "$buildDirectory/*.iso" -ErrorAction SilentlyContinue)
+    if ($isoFiles.Count -eq 0) { throw "No ISO file found in $buildDirectory after build" }
+    if ($isoFiles.Count -gt 1) { Write-CleanLine "WARN: Multiple ISO files found in ${buildDirectory}: $($isoFiles -join ', '). Using the first one." }
+    $sourceIsoPath = $isoFiles[0]
+    $IsoName = Split-Path $sourceIsoPath -leaf
+
+    if ($SkipChecksum) {
+      Write-CleanLine "Skipping checksum for intermediate ISO; the final ISO checksum will be calculated later."
+    } else {
+      Write-CleanLine "Getting the $sourceIsoPath checksum"
+      $isoChecksum = (Get-FileHash -Algorithm SHA256 $sourceIsoPath).Hash.ToLowerInvariant()
+    }
+
+    Write-CleanLine "Moving the created $sourceIsoPath to $destinationDirectory/$IsoName"
+    Move-Item -Force $sourceIsoPath "$destinationDirectory/$IsoName"
+
+    $fullIsoPath = (Resolve-Path "$destinationDirectory/$IsoName").Path
+    if ($SkipChecksum) {
+      Remove-Item -LiteralPath "$fullIsoPath.sha256.txt" -Force -ErrorAction SilentlyContinue
+    } else {
+      Set-Content -Encoding ascii -NoNewline -LiteralPath "$fullIsoPath.sha256.txt" -Value $isoChecksum
+    }
   }
 
   Set-Content -Path $destinationIsoMetadataPath -Value (
@@ -586,22 +612,17 @@ function Get-WindowsIso($name, $destinationDirectory) {
     } | ConvertTo-Json -Depth 99) -replace '\\u0026','&'
   )
 
-  Write-CleanLine "Moving the created $sourceIsoPath to $destinationDirectory/$IsoName"
-  Move-Item -Force $sourceIsoPath "$destinationDirectory/$IsoName"
-
-  $fullIsoPath = (Resolve-Path "$destinationDirectory/$IsoName").Path
-  if ($SkipChecksum) {
-    Remove-Item -LiteralPath "$fullIsoPath.sha256.txt" -Force -ErrorAction SilentlyContinue
-  } else {
-    Set-Content -Encoding ascii -NoNewline -LiteralPath "$fullIsoPath.sha256.txt" -Value $isoChecksum
-  }
-
   Write-CleanLine "Cleaning up build directory to save space..."
   Remove-Item -Force -Recurse $buildDirectory -ErrorAction SilentlyContinue
 
   if ($env:GITHUB_ENV) {
-    Write-Output "ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-    Write-Output "ISO_PATH=$fullIsoPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    if ($PrepareMediaOnly) {
+      Write-Output "UUP_ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      Write-Output "UUP_MEDIA_PATH=$preparedMediaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    } else {
+      Write-Output "ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      Write-Output "ISO_PATH=$fullIsoPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    }
   }
   Write-CleanLine 'All Done.'
 }

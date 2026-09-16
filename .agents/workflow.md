@@ -36,8 +36,8 @@ The workflow chooses the runner from the architecture:
    - Public release and Insider names map to UUP rings: 25H2, 26H2, and 26H1 accept `RETAIL` or `RP`; Beta uses `WIS`; Experimental uses `WIF`; and Future Platforms uses `CANARY`.
    - UUP ESD compression is enabled only when `esd=true` and `tiny11=false`, because Tiny11 recompresses later when requested.
 3. Free disk space on the runner.
-4. Build the Windows ISO through `uup-dump-get-windows-iso.ps1`. It prepares `autounattend.xml` for the selected architecture and edition, asks the downloaded converter to retain its completed media folder with `SkipISO=1`, adds the answer file, and creates the ISO once with the converter's bundled `cdimage.exe`.
-5. If `tiny11=true`, run `scripts/tiny11maker-headless.ps1`, which carries the same prepared answer file into the `_Tiny11.iso`, then move and rename that final ISO in the output directory.
+4. Prepare Windows media through `uup-dump-get-windows-iso.ps1`. It prepares `autounattend.xml` for the selected architecture and edition, asks the downloaded converter to retain its completed media folder with `SkipISO=1`, and adds the answer file. Without Tiny11 it creates the final ISO with the converter's bundled `cdimage.exe`; with Tiny11 it exports the media directory without creating an intermediate ISO.
+5. If `tiny11=true`, run `scripts/tiny11maker-headless.ps1` directly against that writable media directory, create the only ISO for the build, then move and rename it in the output directory and remove the consumed media directory.
 6. Upload the ISO as a raw uncompressed GitHub artifact, use the action's SHA256 digest to generate verification instructions, and upload the checksum and instructions as a separate small artifact.
 7. Write a GitHub step summary with build details, checksum, raw artifact link, and UUP dump source link.
 8. If `upload_yandex_disk=true`, start a separate Ubuntu job that gives Yandex Disk a temporary signed GitHub artifact URL, polls the server-side import, verifies the remote size and SHA256, and uploads the small `.sha256` sidecar. Imports targeting the same ISO name are serialized to avoid conflicting overwrites.
@@ -52,10 +52,10 @@ This separately triggered workflow accepts a direct HTTPS ISO URL, an optional S
 
 ## Important behavior
 
-- The UUP stage writes `ISO_NAME` and `ISO_PATH` into `GITHUB_ENV`.
+- Without Tiny11, the UUP stage writes `ISO_NAME` and `ISO_PATH` into `GITHUB_ENV`. With Tiny11, it writes `UUP_ISO_NAME` and `UUP_MEDIA_PATH`; the finalization step publishes the final `ISO_NAME` and `ISO_PATH`.
 - UUP search skips standalone `.NET Framework` update entries before checking language, edition, and ring.
-- Tiny11 assumes the UUP-generated ISO has a single image index, so the workflow calls it with `INDEX=1`.
-- The Tiny11 output is staged through a temporary path before replacing the final ISO path.
+- Tiny11 assumes the UUP-generated media has a single image index, so the workflow calls it with `INDEX=1`.
+- The Tiny11 output is staged through a temporary path before becoming the final ISO; no intermediate UUP ISO is created.
 - Every workflow-built ISO contains a root `autounattend.xml`. Its temporary copy is adjusted for x64/ARM64 and Pro/Home, placed in the converter's completed media folder before ISO creation, and carried forward by Tiny11 when enabled.
 - The workflow expects output artifacts under `c:/output`.
 - The ISO artifact uses `actions/upload-artifact@v7` with `archive: false`; verification files are kept in a separate small artifact. The v8 download action used by the tests accepts the raw artifact.
