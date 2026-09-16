@@ -178,6 +178,23 @@ if ($auditTiny11) {
         Test-RegistryExpectation -Path $expectation.Path -Name $expectation.Name -Expected $expectation.Value
     }
 
+    $oneDriveStartupPaths = @(
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run',
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32'
+    )
+    foreach ($path in $oneDriveStartupPaths) {
+        $properties = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+        foreach ($name in @('OneDrive', 'OneDriveSetup')) {
+            $property = if ($properties) { $properties.PSObject.Properties[$name] } else { $null }
+            Add-Check -Name "OneDrive startup value absent: $path\$name" `
+                -Passed ($null -eq $property) `
+                -Expected 'Absent' `
+                -Actual $(if ($null -eq $property) { 'Absent' } else { [string]$property.Value })
+        }
+    }
+
     foreach ($serviceName in @('DiagTrack', 'WerSvc', 'dmwappushservice')) {
         $servicePath = "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName"
         if (Test-Path -LiteralPath $servicePath) {

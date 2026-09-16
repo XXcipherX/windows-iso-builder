@@ -570,6 +570,8 @@ function Set-RegistryTweaks {
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zCOMPONENTS', "$scratchDir\Windows\System32\config\COMPONENTS") -Action 'Load COMPONENTS hive' | Out-Null
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zDEFAULT', "$scratchDir\Windows\System32\config\default") -Action 'Load DEFAULT hive' | Out-Null
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zNTUSER', "$scratchDir\Users\Default\ntuser.dat") -Action 'Load NTUSER hive' | Out-Null
+    Remove-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Run\OneDrive'
+    Remove-RegistryValue 'HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Run\OneDriveSetup'
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSOFTWARE', "$scratchDir\Windows\System32\config\SOFTWARE") -Action 'Load SOFTWARE hive' | Out-Null
     Invoke-NativeChecked -FilePath 'reg' -Arguments @('load', 'HKLM\zSYSTEM', "$scratchDir\Windows\System32\config\SYSTEM") -Action 'Load SYSTEM hive' | Out-Null
     $currentControlSet = Get-OfflineCurrentControlSet
