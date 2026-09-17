@@ -2,6 +2,8 @@
 
 Workflow file: `.github/workflows/build.yml`
 
+The workflows are the repository's only supported execution interface. PowerShell scripts are internal workers called by workflow steps.
+
 ## Trigger
 
 The workflow is manually triggered with `workflow_dispatch`.
@@ -54,7 +56,7 @@ This separately triggered workflow accepts a direct HTTPS ISO URL, an optional S
 
 - Without Tiny11, the UUP stage writes `ISO_NAME` and `ISO_PATH` into `GITHUB_ENV`. With Tiny11, it writes `UUP_ISO_NAME` and `UUP_MEDIA_PATH`; the finalization step publishes the final `ISO_NAME` and `ISO_PATH`.
 - UUP search skips standalone `.NET Framework` update entries before checking language, edition, and ring.
-- Tiny11 assumes the UUP-generated media has a single image index, so the workflow calls it with `INDEX=1`.
+- Tiny11 assumes the UUP-generated media has a single image index and always processes image index 1.
 - The Tiny11 output is staged through a temporary path before becoming the final ISO; no intermediate UUP ISO is created.
 - Every workflow-built ISO contains a root `autounattend.xml`. Its temporary copy is adjusted for x64/ARM64 and Pro/Home, placed in the converter's completed media folder before ISO creation, and carried forward by Tiny11 when enabled.
 - The workflow expects output artifacts under `c:/output`.

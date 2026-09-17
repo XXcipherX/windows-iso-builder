@@ -1,16 +1,27 @@
-#!/usr/bin/pwsh
-
+# Internal worker for .github/workflows/build.yml.
 param(
+  [Parameter(Mandatory)]
+  [ValidateNotNullOrEmpty()]
   [string]$windowsTargetName,
-  [string]$destinationDirectory = 'output',
-  [ValidateSet("x64", "arm64")] [string]$architecture = "x64",
-  [ValidateSet("pro", "home")] [string]$edition = "pro",
+
+  [Parameter(Mandatory)]
+  [ValidateNotNullOrEmpty()]
+  [string]$destinationDirectory,
+
+  [Parameter(Mandatory)]
+  [ValidateSet("x64", "arm64")]
+  [string]$architecture,
+
+  [Parameter(Mandatory)]
+  [ValidateSet("pro", "home")]
+  [string]$edition,
+
+  [Parameter(Mandatory)]
   [ValidateSet("nb-no", "fr-ca", "fi-fi", "lv-lv", "es-es", "en-gb", "zh-tw", "th-th", "sv-se", "en-us", "es-mx", "bg-bg", "hr-hr", "pt-br", "el-gr", "cs-cz", "it-it", "sk-sk", "pl-pl", "sl-si", "neutral", "ja-jp", "et-ee", "ro-ro", "fr-fr", "pt-pt", "ar-sa", "lt-lt", "hu-hu", "da-dk", "zh-cn", "uk-ua", "tr-tr", "ru-ru", "nl-nl", "he-il", "ko-kr", "sr-latn-rs", "de-de")]
-  [string]$lang = "en-us",
+  [string]$lang,
   [switch]$esd,
   [switch]$netfx3,
   [string]$revision,
-  [switch]$SkipChecksum,
   [switch]$PrepareMediaOnly
 )
 
@@ -160,18 +171,6 @@ $TARGETS = @{
   "win11-26h1"             = @{ baseBuild="28000"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP") }
   "win11-experimental"     = @{ baseBuild="26340"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wif","Experimental"); displayVersion="EXPERIMENTAL" }
   "win11-future-platforms" = @{ edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Canary","FuturePlatforms","Future Platforms"); displayVersion="FUTURE PLATFORMS" }
-}
-
-$TARGET_ALIASES = @{
-  "win11-25h2-beta" = "win11-beta"
-  "win11-dev"       = "win11-experimental"
-  "win11-canary"    = "win11-future-platforms"
-}
-
-if ($TARGET_ALIASES.ContainsKey($windowsTargetName)) {
-  $replacementTarget = $TARGET_ALIASES[$windowsTargetName]
-  Write-CleanLine "WARN: Windows target '$windowsTargetName' is deprecated; using '$replacementTarget'."
-  $windowsTargetName = $replacementTarget
 }
 
 if (-not $TARGETS.ContainsKey($windowsTargetName)) {
@@ -444,7 +443,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
   $preparedAnswerPath = Join-Path $PSScriptRoot 'scripts\autounattend.xml'
   New-BuildAnswerFile -OutputPath $preparedAnswerPath
 
-  $customAppsSource = ".\CustomAppsList.txt"
+  $customAppsSource = Join-Path $PSScriptRoot 'CustomAppsList.txt'
   $customAppsDest   = "$buildDirectory\CustomAppsList.txt"
 
   if (Test-Path $customAppsSource) { Write-CleanLine "Copying CustomAppsList.txt to build directory..."; Copy-Item -Path $customAppsSource -Destination $customAppsDest -Force } else { Write-CleanLine "WARNING: CustomAppsList.txt not found, skipping." }
@@ -495,8 +494,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
     Patch-Aria2-Flags -CmdPath (Join-Path $buildDirectory 'uup_download_windows.cmd')
 
     # Raw log path
-    $rawLogDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
-    $rawLog = Join-Path $rawLogDir "uup_dism_aria2_raw.log"
+    $rawLog = Join-Path $env:RUNNER_TEMP "uup_dism_aria2_raw.log"
 
     & {
       powershell cmd /c uup_download_windows.cmd 2>&1 |
@@ -577,22 +575,13 @@ function Get-WindowsIso($name, $destinationDirectory) {
     $sourceIsoPath = $isoFiles[0]
     $IsoName = Split-Path $sourceIsoPath -leaf
 
-    if ($SkipChecksum) {
-      Write-CleanLine "Skipping checksum for intermediate ISO; the final ISO checksum will be calculated later."
-    } else {
-      Write-CleanLine "Getting the $sourceIsoPath checksum"
-      $isoChecksum = (Get-FileHash -Algorithm SHA256 $sourceIsoPath).Hash.ToLowerInvariant()
-    }
+    Write-CleanLine "Deferring checksum generation to the raw GitHub artifact upload."
 
     Write-CleanLine "Moving the created $sourceIsoPath to $destinationDirectory/$IsoName"
     Move-Item -Force $sourceIsoPath "$destinationDirectory/$IsoName"
 
     $fullIsoPath = (Resolve-Path "$destinationDirectory/$IsoName").Path
-    if ($SkipChecksum) {
-      Remove-Item -LiteralPath "$fullIsoPath.sha256.txt" -Force -ErrorAction SilentlyContinue
-    } else {
-      Set-Content -Encoding ascii -NoNewline -LiteralPath "$fullIsoPath.sha256.txt" -Value $isoChecksum
-    }
+    Remove-Item -LiteralPath "$fullIsoPath.sha256.txt" -Force -ErrorAction SilentlyContinue
   }
 
   Set-Content -Path $destinationIsoMetadataPath -Value (
@@ -615,14 +604,12 @@ function Get-WindowsIso($name, $destinationDirectory) {
   Write-CleanLine "Cleaning up build directory to save space..."
   Remove-Item -Force -Recurse $buildDirectory -ErrorAction SilentlyContinue
 
-  if ($env:GITHUB_ENV) {
-    if ($PrepareMediaOnly) {
-      Write-Output "UUP_ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      Write-Output "UUP_MEDIA_PATH=$preparedMediaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-    } else {
-      Write-Output "ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      Write-Output "ISO_PATH=$fullIsoPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-    }
+  if ($PrepareMediaOnly) {
+    Write-Output "UUP_ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    Write-Output "UUP_MEDIA_PATH=$preparedMediaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+  } else {
+    Write-Output "ISO_NAME=$IsoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    Write-Output "ISO_PATH=$fullIsoPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
   }
   Write-CleanLine 'All Done.'
 }

@@ -260,7 +260,6 @@ jobs:
             architecture         = '${{ inputs.architecture }}'
             edition              = '${{ inputs.edition }}'
             lang                 = '${{ steps.map.outputs.lang }}'
-            SkipChecksum         = $true
           }
 
           # If Tiny11 is enabled, skip UUP dump ESD compression (Tiny11 re-compresses it anyway)
@@ -302,12 +301,11 @@ jobs:
           $splat = @{
             MediaPath    = $mediaPath
             Architecture = '${{ inputs.architecture }}'
-            INDEX        = 1
             OutputPath   = $tiny11OutputPath
           }
           if ('${{ inputs.esd }}' -eq 'true') { $splat.ESD = $true }
 
-          # INDEX=1: UUP dump builds a single-edition ISO, so the WIM always has index 1
+          # The Tiny11 worker uses image index 1 because UUP dump builds single-edition media.
           # Export the known output path first because the Tiny11 script terminates PowerShell with exit 0.
           Write-Output "TINY11_ISO_PATH=$tiny11OutputPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           .\scripts\tiny11maker-headless.ps1 @splat

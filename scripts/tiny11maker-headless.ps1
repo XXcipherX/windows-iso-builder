@@ -1,37 +1,20 @@
 <#
 .SYNOPSIS
-    Headless script to build a trimmed-down Windows 11 image for CI/CD automation.
+    GitHub Actions worker for building a trimmed-down Windows 11 image.
 
 .DESCRIPTION
-    Automated build of a streamlined Windows 11 image (tiny11) without user interaction.
-    Designed for GitHub Actions workflows and other CI/CD pipelines.
+    Processes the writable Windows media directory prepared by the repository's
+    Build Windows workflow and creates its final Tiny11 ISO.
     Uses only Microsoft utilities like DISM, with oscdimg.exe from Windows ADK.
 
-.PARAMETER ISO
-    Drive letter of the mounted Windows 11 ISO (required, e.g., E)
-
-.PARAMETER ISOPath
-    Path to a Windows ISO file that will be mounted automatically
-
 .PARAMETER MediaPath
-    Path to a writable Windows media directory. The directory is modified in place and retained.
+    Writable Windows media directory exported by the UUP workflow stage.
 
 .PARAMETER Architecture
     Target Windows architecture used to select the ISO boot entries (x64 or arm64)
 
-.PARAMETER INDEX
-    Windows image index to process (required, e.g., 1 for Home, 6 for Pro)
-
-.PARAMETER SCRATCH
-    Drive letter for scratch disk operations (optional, defaults to script root)
-
-.PARAMETER SkipCleanup
-    Skip cleanup of temporary files after ISO creation (optional, for debugging)
-
-.EXAMPLE
-    .\tiny11maker-headless.ps1 -ISO E -INDEX 1
-    .\tiny11maker-headless.ps1 -ISO E -INDEX 6 -SCRATCH D
-    .\tiny11maker-headless.ps1 -MediaPath C:\output\win11-25h2.media -INDEX 1
+.PARAMETER OutputPath
+    Temporary ISO output path supplied by the workflow finalization stage.
 
 .NOTES
     Original Author: ntdevlabs
@@ -40,39 +23,23 @@
     Date: 2025-12-08
     
     License: MIT
-    This is a headless automation-ready version designed for CI/CD pipelines.
+    This repository uses the script only as an internal GitHub Actions worker.
 #>
 
 #---------[ Parameters ]---------#
 [CmdletBinding()]
 param (
-    [Parameter(Mandatory = $false, HelpMessage = "Drive letter of mounted Windows 11 ISO (e.g., E)")]
-    [ValidatePattern('^[c-zC-Z]$')]
-    [string]$ISO,
-    
-    [Parameter(Mandatory = $false, HelpMessage = "Path to Windows ISO file (will be mounted automatically)")]
-    [string]$ISOPath,
-
-    [Parameter(Mandatory = $false, HelpMessage = "Path to writable prepared Windows media (modified in place)")]
+    [Parameter(Mandatory = $true, HelpMessage = "Writable Windows media prepared by the UUP workflow stage")]
+    [ValidateNotNullOrEmpty()]
     [string]$MediaPath,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Target Windows architecture")]
+    [Parameter(Mandatory = $true, HelpMessage = "Target Windows architecture")]
     [ValidateSet("x64", "arm64")]
-    [string]$Architecture = "x64",
+    [string]$Architecture,
     
-    [Parameter(Mandatory = $true, HelpMessage = "Windows image index (1=Home, 6=Pro, etc.)")]
-    [ValidateRange(1, 10)]
-    [int]$INDEX,
-    
-    [Parameter(Mandatory = $false, HelpMessage = "Scratch disk drive letter (defaults to script directory)")]
-    [ValidatePattern('^[c-zC-Z]$')]
-    [string]$SCRATCH,
-    
-    [Parameter(Mandatory = $false, HelpMessage = "Output ISO file path (defaults to script directory)")]
+    [Parameter(Mandatory = $true, HelpMessage = "Temporary ISO output path supplied by the workflow")]
+    [ValidateNotNullOrEmpty()]
     [string]$OutputPath,
-    
-    [Parameter(Mandatory = $false, HelpMessage = "Skip cleanup of temporary files")]
-    [switch]$SkipCleanup,
     
     [Parameter(Mandatory = $false, HelpMessage = "Export as install.esd (maximum compression)")]
     [switch]$ESD
@@ -83,20 +50,13 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 #---------[ Configuration ]---------#
-if (-not $SCRATCH) {
-    $ScratchDisk = $PSScriptRoot -replace '[\\]+$', ''
-}
-else {
-    $ScratchDisk = $SCRATCH + ":"
-}
-
-$script:AutoMountedISO = $null
-$script:UsesPreparedMedia = $false
-$wimFilePath = "$ScratchDisk\tiny11\sources\install.wim"
-$scratchDir = "$ScratchDisk\scratchdir"
-$tiny11Dir = "$ScratchDisk\tiny11"
-$outputISO = if ($OutputPath) { $OutputPath } else { "$PSScriptRoot\tiny11.iso" }
-$logFile = "$PSScriptRoot\tiny11_$(Get-Date -Format yyyyMMdd_HHmmss).log"
+$RunnerTempRoot = (Resolve-Path -LiteralPath $env:RUNNER_TEMP).Path -replace '[\\/]+$', ''
+$INDEX = 1
+$wimFilePath = $null
+$scratchDir = "$RunnerTempRoot\scratchdir"
+$tiny11Dir = $null
+$outputISO = [System.IO.Path]::GetFullPath($OutputPath)
+$logFile = Join-Path $env:RUNNER_TEMP "tiny11_$(Get-Date -Format yyyyMMdd_HHmmss).log"
 
 #---------[ Functions ]---------#
 function Write-Log {
@@ -323,10 +283,10 @@ function Test-Prerequisites {
     }
     
     # Check disk space (minimum 15GB recommended)
-    $disk = Get-PSDrive -Name $ScratchDisk[0] -ErrorAction SilentlyContinue
+    $disk = Get-PSDrive -Name $RunnerTempRoot[0] -ErrorAction SilentlyContinue
     if ($disk) {
         $freeGB = [math]::Round($disk.Free / 1GB, 2)
-        Write-Log "Available space on ${ScratchDisk}: ${freeGB}GB"
+        Write-Log "Available space on ${RunnerTempRoot}: ${freeGB}GB"
         if ($freeGB -lt 15) {
             Write-Log "Low disk space warning: ${freeGB}GB (15GB+ recommended)" "WARN"
         }
@@ -337,9 +297,6 @@ function Test-Prerequisites {
 
 function Initialize-Directories {
     Write-Log "Initializing directories..."
-    if (-not $script:UsesPreparedMedia) {
-        New-Item -ItemType Directory -Force -Path "$tiny11Dir\sources" | Out-Null
-    }
     New-Item -ItemType Directory -Force -Path $scratchDir | Out-Null
     Write-Log "Directories created"
 }
@@ -373,20 +330,6 @@ function Convert-ESDToWIM {
     # The exported WIM contains only one image, so it is always index 1.
     $script:INDEX = 1
     Write-Log "ESD conversion complete (source index $selectedIndex exported as WIM index 1)"
-}
-
-function Copy-WindowsFiles {
-    Write-Log "Copying Windows installation files from $DriveLetter..."
-    Copy-Item -Path "$DriveLetter\*" -Destination $tiny11Dir -Recurse -Force
-    
-    if (-not (Test-Path "$tiny11Dir\sources\boot.wim")) {
-        throw "Copied source is invalid: missing $tiny11Dir\sources\boot.wim"
-    }
-    if (-not (Test-Path "$tiny11Dir\sources\install.wim") -and -not (Test-Path "$tiny11Dir\sources\install.esd")) {
-        throw "Copied source is invalid: missing both install.wim and install.esd in $tiny11Dir\sources"
-    }
-    
-    Write-Log "File copy complete"
 }
 
 function Test-ImageIndex {
@@ -1037,7 +980,7 @@ function New-TinyISO {
     # Determine oscdimg.exe location
     $hostArchitecture = $Env:PROCESSOR_ARCHITECTURE
     $ADKDepTools = "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\$hostArchitecture\Oscdimg"
-    $localOSCDIMGPath = "$PSScriptRoot\oscdimg.exe"
+    $downloadedOSCDIMGPath = "$PSScriptRoot\oscdimg.exe"
     
     if (Test-Path "$ADKDepTools\oscdimg.exe") {
         Write-Log "Using oscdimg.exe from Windows ADK"
@@ -1047,12 +990,12 @@ function New-TinyISO {
         Write-Log "ADK not found, downloading oscdimg.exe..."
         $url = "https://msdl.microsoft.com/download/symbols/oscdimg.exe/3D44737265000/oscdimg.exe"
         
-        if (-not (Test-Path $localOSCDIMGPath)) {
-            Invoke-WebRequest -Uri $url -OutFile $localOSCDIMGPath -UseBasicParsing
+        if (-not (Test-Path $downloadedOSCDIMGPath)) {
+            Invoke-WebRequest -Uri $url -OutFile $downloadedOSCDIMGPath -UseBasicParsing
             Write-Log "Downloaded oscdimg.exe"
         }
         
-        $OSCDIMG = $localOSCDIMGPath
+        $OSCDIMG = $downloadedOSCDIMGPath
     }
     
     Write-Log "Building bootable ISO (this may take 5-10 minutes)..."
@@ -1083,35 +1026,18 @@ function New-TinyISO {
 }
 
 function Invoke-Cleanup {
-    if ($SkipCleanup) {
-        Write-Log "Skipping cleanup (SkipCleanup flag set)" "WARN"
-        return
-    }
-    
     Write-Log "Performing cleanup..."
     
-    # Remove temporary directories. A caller-supplied media directory is retained.
-    if ($script:UsesPreparedMedia) {
-        Write-Log "Retaining prepared media directory: $tiny11Dir"
-    }
-    else {
-        Remove-PathQuietly -Path $tiny11Dir -Description "tiny11 folder" -Recurse | Out-Null
-    }
+    # The workflow finalization step owns the prepared media directory.
+    Write-Log "Retaining prepared media directory for workflow finalization: $tiny11Dir"
     Remove-PathQuietly -Path $scratchDir -Description "scratchdir folder" -Recurse | Out-Null
     
     # Remove downloaded files
     Remove-PathQuietly -Path "$PSScriptRoot\oscdimg.exe" -Description "downloaded oscdimg.exe" | Out-Null
-    # Note: autounattend.xml is a tracked repo file — do NOT delete from PSScriptRoot
-    
-    # Dismount auto-mounted ISO if applicable
-    if ($script:AutoMountedISO) {
-        Write-Log "Dismounting auto-mounted ISO: $($script:AutoMountedISO)"
-        Dismount-DiskImage -ImagePath $script:AutoMountedISO -ErrorAction SilentlyContinue
-    }
+    # The generated answer file belongs to the UUP workflow stage.
     
     # Verify cleanup
     $remainingItems = @()
-    if (-not $script:UsesPreparedMedia -and (Test-Path $tiny11Dir)) { $remainingItems += "tiny11 folder" }
     if (Test-Path $scratchDir) { $remainingItems += "scratchdir folder" }
     
     if ($remainingItems.Count -gt 0) {
@@ -1127,64 +1053,19 @@ try {
     Write-Log "=== Tiny11 Headless Builder Started ===" "INFO"
     Write-Log "Author: kelexine (https://github.com/kelexine)"
     
-    if ($MediaPath -and ($ISO -or $ISOPath)) {
-        throw "MediaPath cannot be combined with ISO or ISOPath"
+    if (-not (Test-Path -LiteralPath $MediaPath -PathType Container)) {
+        throw "Prepared Windows media directory not found: $MediaPath"
     }
 
-    if ($MediaPath) {
-        if (-not (Test-Path -LiteralPath $MediaPath -PathType Container)) {
-            throw "Prepared Windows media directory not found: $MediaPath"
-        }
+    $tiny11Dir = (Resolve-Path -LiteralPath $MediaPath).Path
+    $wimFilePath = "$tiny11Dir\sources\install.wim"
+    Write-Log "Using workflow-prepared Windows media in place: $tiny11Dir"
+    Write-Log "Parameters: MediaPath=$tiny11Dir, Architecture=$Architecture, INDEX=$INDEX, RunnerTemp=$RunnerTempRoot, Output=$outputISO"
 
-        $tiny11Dir = (Resolve-Path -LiteralPath $MediaPath).Path
-        $wimFilePath = "$tiny11Dir\sources\install.wim"
-        $sourcePath = $tiny11Dir
-        $script:UsesPreparedMedia = $true
-        Write-Log "Using prepared Windows media in place: $tiny11Dir"
-    }
-    # Auto-mount ISO if -ISOPath was provided
-    elseif ($ISOPath) {
-        if (-not (Test-Path $ISOPath)) { throw "ISO file not found: $ISOPath" }
-        $resolvedPath = (Resolve-Path $ISOPath).Path
-        Write-Log "Mounting ISO: $resolvedPath"
-        $mountResult = Mount-DiskImage -ImagePath $resolvedPath -PassThru
-        
-        $foundISO = $null
-        for ($attempt = 0; $attempt -lt 10 -and -not $foundISO; $attempt++) {
-            $isoVolume = $mountResult | Get-Volume -ErrorAction SilentlyContinue
-            if ($isoVolume) {
-                $foundISO = $isoVolume |
-                Where-Object { $_.PSObject.Properties.Name -contains 'DriveLetter' -and $_.DriveLetter } |
-                Select-Object -First 1 -ExpandProperty DriveLetter
-            }
-            if (-not $foundISO) {
-                Start-Sleep -Milliseconds 500
-            }
-        }
-        
-        if (-not $foundISO) { throw "Failed to get drive letter after mounting $resolvedPath" }
-        $ISO = $foundISO
-        Write-Log "ISO mounted at drive: ${ISO}:"
-        $script:AutoMountedISO = $resolvedPath
-    }
-    elseif (-not $ISO) {
-        throw "One of -ISO, -ISOPath, or -MediaPath must be specified"
-    }
+    Test-Prerequisites -SourcePath $tiny11Dir
 
-    if (-not $script:UsesPreparedMedia) {
-        $DriveLetter = $ISO + ":"
-        $sourcePath = $DriveLetter
-    }
-
-    Write-Log "Parameters: Source=$sourcePath, Architecture=$Architecture, INDEX=$INDEX, SCRATCH=$ScratchDisk, Output=$outputISO"
-
-    Test-Prerequisites -SourcePath $sourcePath
-
-    # Copy source files and handle install.esd conversion if needed
+    # Handle install.esd conversion if needed.
     Initialize-Directories
-    if (-not $script:UsesPreparedMedia) {
-        Copy-WindowsFiles
-    }
 
     if (Test-Path "$tiny11Dir\sources\install.esd") {
         Write-Log "Found install.esd, conversion required"
@@ -1238,12 +1119,6 @@ catch {
         if ($mountedHere) {
             Write-Log "Emergency dismount (current scratch path): $scratchDir" "WARN"
             Dismount-WindowsImage -Path $scratchDir -Discard -ErrorAction SilentlyContinue
-        }
-        
-        # Dismount auto-mounted ISO
-        if ($script:AutoMountedISO) {
-            Write-Log "Emergency dismount ISO: $($script:AutoMountedISO)" "WARN"
-            Dismount-DiskImage -ImagePath $script:AutoMountedISO -ErrorAction SilentlyContinue
         }
     }
     catch {

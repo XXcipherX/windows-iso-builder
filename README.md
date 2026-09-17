@@ -1,6 +1,6 @@
 # Windows ISO Builder
 
-**Automated pipeline for building and optimizing Windows ISO images via GitHub Actions.**
+**GitHub Actions-only pipeline for building and optimizing Windows ISO images.**
 
 Combines [UUP dump](https://uupdump.net) ISO assembly with [Tiny11](https://github.com/ntdevlabs/tiny11builder) optimization into a single workflow.
 
@@ -108,7 +108,7 @@ Tiny11 still adds its separate offline image cleanup and registry changes when e
 
 ## ✅ ISO Testing in GitHub Actions
 
-Enable **ISO test** when manually starting `Build Windows` to run an optional test job after the ISO artifact is uploaded. The test:
+Enable **ISO test** when dispatching the `Build Windows` GitHub Actions workflow to run an optional test job after the ISO artifact is uploaded. The test:
 
 - verifies the ISO boot files and x64 WIM/ESD metadata;
 - runs `wimverify` against `boot.wim` and `install.wim` or `install.esd`;
@@ -119,7 +119,7 @@ The boot test uses KVM when the runner exposes `/dev/kvm` and automatically fall
 
 When **Full install test** is enabled, this separate Windows PE boot job is skipped. The full test performs the same structural and WIM/ESD checks first, then proceeds directly to installation, first boot, and audit. Selecting both checkboxes therefore does not download or test the ISO twice.
 
-To test an existing image without rebuilding it, manually run `Test Windows ISO from URL`. Supply a direct HTTPS URL to the ISO and, optionally, its SHA256. A download page or a GitHub Actions artifact page is not a direct ISO URL. QEMU and WIM tools are installed only on the temporary Ubuntu runner.
+To test an existing image without rebuilding it, dispatch the `Test Windows ISO from URL` GitHub Actions workflow. Supply a direct HTTPS URL to the ISO and, optionally, its SHA256. A download page or a GitHub Actions artifact page is not a direct ISO URL. QEMU and WIM tools are installed only on the temporary Ubuntu runner.
 
 ### Full installation test
 
@@ -131,48 +131,6 @@ The URL workflow provides matching **Full installation test** and **Tiny11 audit
 
 ---
 
-## 💻 Manual Usage
-
-### Build ISO only (UUP dump)
-
-```powershell
-pwsh uup-dump-get-windows-iso.ps1 win11-25h2 c:/output -architecture x64 -edition pro -lang en-us -esd -netfx3
-```
-
-Supported target keys:
-
-| Target | UUP branch | Allowed UUP ring |
-|--------|------------|------------------|
-| `win11-25h2` | `26200.*` | Retail / RP |
-| `win11-26h2` | `26300.*` | Retail / RP |
-| `win11-beta` | `26220.*` | WIS |
-| `win11-26h1` | `28000.*` | Retail / RP |
-| `win11-experimental` | `26340.*` | WIF |
-| `win11-future-platforms` | Latest future platform build | Canary |
-
-Release-version targets accept only Retail or Release Preview candidates, preventing a newer Canary publication with the same base build from being selected silently.
-
-Use `-revision` with a full build number matching the selected target, such as `-revision 26340.9233` for Experimental. For fixed branches, a suffix such as `-revision 9233` is also accepted. Future Platforms requires the full build number because its major build changes over time.
-
-### Optimize existing ISO (Tiny11)
-
-```powershell
-# Option A: Pass ISO file path (auto-mounts)
-.\scripts\tiny11maker-headless.ps1 -ISOPath "C:\path\to\windows.iso" -INDEX 1
-
-# Option B: Pass mounted drive letter
-.\scripts\tiny11maker-headless.ps1 -ISO E -INDEX 1
-
-# Option C: Process a writable media directory in place (the directory is retained)
-.\scripts\tiny11maker-headless.ps1 -MediaPath "C:\path\to\windows-media" -Architecture x64 -INDEX 1
-
-# With custom output path
-.\scripts\tiny11maker-headless.ps1 -ISOPath "C:\path\to\windows.iso" -INDEX 1 -OutputPath "C:\output\optimized.iso"
-
-```
-
----
-
 ## 🤖 Agent Documentation
 
 Agent-facing documentation is available in [`AGENTS.md`](AGENTS.md) and [`.agents/`](.agents/):
@@ -180,7 +138,7 @@ Agent-facing documentation is available in [`AGENTS.md`](AGENTS.md) and [`.agent
 - [`.agents/README.md`](.agents/README.md) — overview and operating rules
 - [`.agents/repository-map.md`](.agents/repository-map.md) — file responsibilities and generated artifacts
 - [`.agents/workflow.md`](.agents/workflow.md) — GitHub Actions pipeline notes
-- [`.agents/local-runbook.md`](.agents/local-runbook.md) — local commands, validation, and safety notes
+- [`.agents/ci-runbook.md`](.agents/ci-runbook.md) — GitHub Actions operation and validation guidance
 
 ---
 
@@ -190,7 +148,7 @@ Agent-facing documentation is available in [`AGENTS.md`](AGENTS.md) and [`.agent
 windows-iso-builder/
 ├── .agents/
 │   ├── README.md                   # Agent docs entry point
-│   ├── local-runbook.md            # Local validation and safety notes
+│   ├── ci-runbook.md               # GitHub Actions operation and safety notes
 │   ├── repository-map.md           # File ownership map
 │   └── workflow.md                 # GitHub Actions pipeline notes
 ├── .github/workflows/
@@ -200,10 +158,10 @@ windows-iso-builder/
 │   ├── test-windows-iso.ps1         # CI-only ISO and Windows PE smoke test
 │   ├── test-windows-install.ps1     # CI-only full installation orchestrator
 │   ├── test-installed-windows.ps1   # In-guest installed-state audit
-│   ├── tiny11maker-headless.ps1     # Tiny11 optimizer
+│   ├── tiny11maker-headless.ps1     # Internal Tiny11 workflow worker
 │   └── upload-yandex-disk.ps1       # Optional GitHub-to-Yandex server-side import
 ├── AGENTS.md                        # Root pointer for IDE/CLI agents
-├── uup-dump-get-windows-iso.ps1     # UUP dump ISO builder
+├── uup-dump-get-windows-iso.ps1     # Internal UUP workflow worker
 ├── CustomAppsList.txt               # UUP dump app selection
 ├── autounattend.xml                 # OOBE bypass & post-install
 ├── .gitignore
@@ -213,22 +171,20 @@ windows-iso-builder/
 
 ---
 
-## 💾 Requirements
+## 🏗️ Execution Environment
 
-### For Building (GitHub Actions / Local)
+Building and validation are performed exclusively by the workflows under `.github/workflows/`:
 
-| Requirement | Minimum | Recommended |
-|------------|---------|-------------|
-| **OS** | Windows 10 | Windows 11 |
-| **PowerShell** | 5.1 | 7.0+ |
-| **RAM** | 8GB | 16GB+ |
-| **Free Disk** | 30GB | 50GB+ |
-| **Permissions** | Administrator | Administrator |
+- `Build Windows` uses a managed Windows runner for UUP preparation and Tiny11 processing.
+- Optional ISO validation and installation auditing use ephemeral Ubuntu runners.
+- `Test Windows ISO from URL` validates an existing image entirely on an ephemeral Ubuntu runner.
+
+The PowerShell files in this repository are internal workflow workers. The supported entry points are the GitHub Actions workflow-dispatch forms.
 
 ### For Running Built ISOs (with Tiny11)
 
 System requirements are **bypassed**:
-- Any x64 processor
+- A processor matching the selected ISO architecture (x64 or ARM64)
 - 1GB+ RAM (2GB+ recommended)
 - 10GB+ storage
 - No TPM / Secure Boot required

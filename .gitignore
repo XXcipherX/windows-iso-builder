@@ -1,6 +1,3 @@
-# UUP dump build output
-output*/
-
 # ISOs and Images (Large Files)
 *.iso
 *.wim
@@ -11,15 +8,11 @@ output*/
 *.swm
 
 # Build Artifacts & Logs
-Tiny11*/
-tiny11/
-scratchdir/
 test-input/
 validation-results/
 install-results/
-Win11_Source.iso
-scripts/tiny11.iso
 scripts/autounattend.xml
+scripts/oscdimg.exe
 *.log
 *.tmp
 
