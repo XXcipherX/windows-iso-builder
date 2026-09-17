@@ -235,19 +235,38 @@ if ($auditTiny11) {
         'MicrosoftTeams', 'Microsoft.549981C3F5F10', 'Microsoft.Windows.AI', 'Microsoft.Windows.AIFabric',
         'Microsoft.Windows.Recall', 'Microsoft.Windows.CoreAI', 'Microsoft.Recall'
     )
-    $packageNames = @(
-        @(Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue).DisplayName
-        @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue).Name
-    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique
-    $remainingPackages = @(
-        foreach ($prefix in $removedPackagePrefixes) {
-            if ($packageNames | Where-Object { $_ -like "*$prefix*" }) { $prefix }
-        }
-    )
-    Add-Check -Name 'Removed Appx package families remain absent' `
-        -Passed ($remainingPackages.Count -eq 0) `
-        -Expected 'None present' `
-        -Actual $(if ($remainingPackages.Count) { $remainingPackages -join '; ' } else { 'None present' })
+    $packageDiscoveryFailed = $false
+    $provisionedPackageNames = @()
+    $installedPackageNames = @()
+    try {
+        $provisionedPackageNames = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop).DisplayName
+    }
+    catch {
+        Add-Check -Name 'Discovery: Get-AppxProvisionedPackage' -Passed $false -Expected 'Successful query' -Actual $_.Exception.Message
+        $packageDiscoveryFailed = $true
+    }
+    try {
+        $installedPackageNames = @(Get-AppxPackage -AllUsers -ErrorAction Stop).Name
+    }
+    catch {
+        Add-Check -Name 'Discovery: Get-AppxPackage -AllUsers' -Passed $false -Expected 'Successful query' -Actual $_.Exception.Message
+        $packageDiscoveryFailed = $true
+    }
+    if (-not $packageDiscoveryFailed) {
+        $packageNames = @(
+            $provisionedPackageNames
+            $installedPackageNames
+        ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique
+        $remainingPackages = @(
+            foreach ($prefix in $removedPackagePrefixes) {
+                if ($packageNames | Where-Object { $_ -like "*$prefix*" }) { $prefix }
+            }
+        )
+        Add-Check -Name 'Removed Appx package families remain absent' `
+            -Passed ($remainingPackages.Count -eq 0) `
+            -Expected 'None present' `
+            -Actual $(if ($remainingPackages.Count) { $remainingPackages -join '; ' } else { 'None present' })
+    }
 
     $removedCapabilities = @(
         'Language.Handwriting', 'Browser.InternetExplorer', 'MathRecognizer',
@@ -256,29 +275,39 @@ if ($auditTiny11) {
         'Hello.Face.18967', 'Hello.Face.Migration.18967', 'Hello.Face.20134',
         'Media.WindowsMediaPlayer', 'Microsoft.Windows.WordPad'
     )
-    $capabilityState = @(Get-WindowsCapability -Online -ErrorAction SilentlyContinue)
-    $remainingCapabilities = @(
-        foreach ($selector in $removedCapabilities) {
-            $matches = @($capabilityState | Where-Object { ($_.Name -split '~')[0] -eq $selector })
-            if ($matches | Where-Object { $_.State -notin @('NotPresent', 'Removed') }) { $selector }
-        }
-    )
-    Add-Check -Name 'Removed Windows capabilities remain absent' `
-        -Passed ($remainingCapabilities.Count -eq 0) `
-        -Expected 'None present' `
-        -Actual $(if ($remainingCapabilities.Count) { $remainingCapabilities -join '; ' } else { 'None present' })
-
-    $remainingFeatures = @()
-    foreach ($featureName in @('MicrosoftWindowsPowerShellV2Root', 'Microsoft-RemoteDesktopConnection', 'Recall')) {
-        $feature = Get-WindowsOptionalFeature -Online -FeatureName $featureName -ErrorAction SilentlyContinue
-        if ($null -ne $feature -and $feature.State -notin @('Disabled', 'DisabledWithPayloadRemoved')) {
-            $remainingFeatures += $featureName
-        }
+    try {
+        $capabilityState = @(Get-WindowsCapability -Online -ErrorAction Stop)
+        $remainingCapabilities = @(
+            foreach ($selector in $removedCapabilities) {
+                $matches = @($capabilityState | Where-Object { ($_.Name -split '~')[0] -eq $selector })
+                if ($matches | Where-Object { $_.State -notin @('NotPresent', 'Removed') }) { $selector }
+            }
+        )
+        Add-Check -Name 'Removed Windows capabilities remain absent' `
+            -Passed ($remainingCapabilities.Count -eq 0) `
+            -Expected 'None present' `
+            -Actual $(if ($remainingCapabilities.Count) { $remainingCapabilities -join '; ' } else { 'None present' })
     }
-    Add-Check -Name 'Removed Windows optional features remain disabled' `
-        -Passed ($remainingFeatures.Count -eq 0) `
-        -Expected 'None enabled' `
-        -Actual $(if ($remainingFeatures.Count) { $remainingFeatures -join '; ' } else { 'None enabled' })
+    catch {
+        Add-Check -Name 'Discovery: Get-WindowsCapability' -Passed $false -Expected 'Successful query' -Actual $_.Exception.Message
+    }
+
+    try {
+        $featureState = @(Get-WindowsOptionalFeature -Online -ErrorAction Stop)
+        $remainingFeatures = @(
+            foreach ($featureName in @('MicrosoftWindowsPowerShellV2Root', 'Microsoft-RemoteDesktopConnection', 'Recall')) {
+                $matches = @($featureState | Where-Object { $_.FeatureName -eq $featureName })
+                if ($matches | Where-Object { $_.State -notin @('Disabled', 'DisabledWithPayloadRemoved') }) { $featureName }
+            }
+        )
+        Add-Check -Name 'Removed Windows optional features remain disabled' `
+            -Passed ($remainingFeatures.Count -eq 0) `
+            -Expected 'None enabled' `
+            -Actual $(if ($remainingFeatures.Count) { $remainingFeatures -join '; ' } else { 'None enabled' })
+    }
+    catch {
+        Add-Check -Name 'Discovery: Get-WindowsOptionalFeature' -Passed $false -Expected 'Successful query' -Actual $_.Exception.Message
+    }
 
     $removedPaths = @(
         'C:\Program Files (x86)\Microsoft\Edge',
