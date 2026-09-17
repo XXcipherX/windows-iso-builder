@@ -11,10 +11,10 @@ The workflow is manually triggered with `workflow_dispatch`.
 Main inputs:
 
 - `architecture`: `x64` or `arm64`; default `x64`.
-- `versions`: Windows target; options are `Windows 11 25H2`, `Windows 11 26H2`, `Windows 11 Beta`, `Windows 11 26H1`, `Windows 11 Experimental`, and `Windows 11 Future Platforms`; default `Windows 11 25H2`.
+- `versions`: Windows target; options are `Windows 11 26H2`, `Windows 11 26H2 Experimental`, `Windows 11 26H1`, `Windows 11 25H2`, `Windows 11 25H2 Beta`, and `Windows 11 Future Platforms`; default `Windows 11 26H2`.
 - `edition`: `Pro` or `Home`; default `Pro`.
 - `language`: one of the supported UI language labels; default `English (United States)`.
-- `revision`: optional full build number matching the selected target, such as `26340.9233` for Experimental. Fixed branches also accept a numeric suffix; Future Platforms requires a full build number.
+- `revision`: optional full build number matching the selected target, such as `26340.9233` for 26H2 Experimental. Fixed branches also accept a numeric suffix; Future Platforms requires a full build number.
 - `esd`: request ESD compression; default `false`.
 - `netfx3`: include .NET Framework 3.5; default `false`.
 - `tiny11`: run Tiny11 optimization; default `true`.
@@ -35,7 +35,7 @@ The workflow chooses the runner from the architecture:
 2. Map user-facing inputs to script values:
    - Language labels become UUP language codes such as `en-us` and `ru-ru`.
    - Version labels become `uup-dump-get-windows-iso.ps1` target names such as `win11-25h2`.
-   - Public release and Insider names map to UUP rings: 25H2, 26H2, and 26H1 accept `RETAIL` or `RP`; Beta uses `WIS`; Experimental uses `WIF`; and Future Platforms uses `CANARY`.
+   - Public release and Insider names map to current UUP dump categories: 25H2, 26H2, and 26H1 accept Retail or Release Preview metadata; 25H2 Beta uses Beta/WIS; 26H2 Experimental uses Dev/WIF; and Future Platforms accepts Dev/WIF or Canary metadata.
    - UUP ESD compression is enabled only when `esd=true` and `tiny11=false`, because Tiny11 recompresses later when requested.
 3. Free disk space on the runner.
 4. Prepare Windows media through `uup-dump-get-windows-iso.ps1`. It prepares `autounattend.xml` for the selected architecture and edition, asks the downloaded converter to retain its completed media folder with `SkipISO=1`, and adds the answer file. Without Tiny11 it creates the final ISO with the converter's bundled `cdimage.exe`; with Tiny11 it exports the media directory without creating an intermediate ISO.

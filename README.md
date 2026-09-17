@@ -36,11 +36,11 @@ UUP dump API → Download UUP files → Prepare Windows media ┬→ Build ISO �
 
 | Input | Options | Default |
 |-------|---------|---------|
-| **Version** | Windows 11 25H2, 26H2, Beta, 26H1, Experimental, Future Platforms | Windows 11 25H2 |
+| **Version** | Windows 11 26H2, 26H2 Experimental, 26H1, 25H2, 25H2 Beta, Future Platforms | Windows 11 26H2 |
 | **Architecture** | x64, arm64 | x64 |
 | **Edition** | Pro, Home | Pro |
 | **Language** | 38 languages (ar-sa → zh-tw) | English (United States) |
-| **Revision** | Optional build matching the selected version, for example `26340.9233` | — |
+| **Revision** | Optional build matching the selected version, for example `26340.9233` for 26H2 Experimental | — |
 
 ### Build Options
 

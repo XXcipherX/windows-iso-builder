@@ -32,13 +32,13 @@ on:
         description: "Windows version to build"
         type: choice
         options:
-          - Windows 11 25H2
           - Windows 11 26H2
-          - Windows 11 Beta
+          - Windows 11 26H2 Experimental
           - Windows 11 26H1
-          - Windows 11 Experimental
+          - Windows 11 25H2
+          - Windows 11 25H2 Beta
           - Windows 11 Future Platforms
-        default: Windows 11 25H2
+        default: Windows 11 26H2
         required: true
       edition:
         description: "Windows edition to build"
@@ -186,12 +186,12 @@ jobs:
           }
 
           $verMap = @{
-            'Windows 11 25H2'             = 'win11-25h2'
-            'Windows 11 26H2'             = 'win11-26h2'
-            'Windows 11 Beta'             = 'win11-beta'
-            'Windows 11 26H1'             = 'win11-26h1'
-            'Windows 11 Experimental'     = 'win11-experimental'
-            'Windows 11 Future Platforms' = 'win11-future-platforms'
+            'Windows 11 26H2'              = 'win11-26h2'
+            'Windows 11 26H2 Experimental' = 'win11-26h2-experimental'
+            'Windows 11 26H1'              = 'win11-26h1'
+            'Windows 11 25H2'              = 'win11-25h2'
+            'Windows 11 25H2 Beta'         = 'win11-25h2-beta'
+            'Windows 11 Future Platforms'  = 'win11-future-platforms'
           }
 
           $langCode = $langMap['${{ inputs.language }}']

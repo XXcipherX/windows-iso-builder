@@ -165,12 +165,12 @@ function New-BuildAnswerFile([string]$OutputPath) {
 }
 
 $TARGETS = @{
-  "win11-25h2"             = @{ baseBuild="26200"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP") }
-  "win11-26h2"             = @{ baseBuild="26300"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP") }
-  "win11-beta"             = @{ baseBuild="26220"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wis","Beta"); displayVersion="BETA" }
-  "win11-26h1"             = @{ baseBuild="28000"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP") }
-  "win11-experimental"     = @{ baseBuild="26340"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wif","Experimental"); displayVersion="EXPERIMENTAL" }
-  "win11-future-platforms" = @{ edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Canary","FuturePlatforms","Future Platforms"); displayVersion="FUTURE PLATFORMS" }
+  "win11-26h2"              = @{ baseBuild="26300"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP","ReleasePreview") }
+  "win11-26h2-experimental" = @{ baseBuild="26340"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wif","Dev"); displayVersion="26H2 EXPERIMENTAL" }
+  "win11-26h1"              = @{ baseBuild="28000"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP","ReleasePreview") }
+  "win11-25h2"              = @{ baseBuild="26200"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP","ReleasePreview") }
+  "win11-25h2-beta"         = @{ baseBuild="26220"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wis","Beta"); displayVersion="25H2 BETA" }
+  "win11-future-platforms"  = @{ edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wif","Dev","Canary"); displayVersion="FUTURE PLATFORMS" }
 }
 
 if (-not $TARGETS.ContainsKey($windowsTargetName)) {
