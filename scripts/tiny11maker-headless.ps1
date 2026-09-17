@@ -63,7 +63,7 @@ function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "[$timestamp] [$Level] $Message"
-    Write-Output $logMessage
+    Write-Host $logMessage
     Add-Content -Path $logFile -Value $logMessage -ErrorAction SilentlyContinue
 }
 
