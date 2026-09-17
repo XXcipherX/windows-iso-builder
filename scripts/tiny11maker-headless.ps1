@@ -523,10 +523,15 @@ function Remove-EdgeAndOneDrive {
     }
     
     Write-Log "Removing OneDrive..."
-    $oneDrivePath = "$scratchDir\Windows\System32\OneDriveSetup.exe"
-    if (Test-Path $oneDrivePath) {
-        if (-not (Remove-PathQuietly -Path $oneDrivePath -Description "OneDriveSetup.exe")) {
-            Write-Log "Could not fully remove OneDrive setup" "WARN"
+    $oneDrivePaths = @(
+        "$scratchDir\Windows\System32\OneDriveSetup.exe",
+        "$scratchDir\Windows\SysWOW64\OneDriveSetup.exe"
+    )
+    foreach ($path in $oneDrivePaths) {
+        if (Test-Path $path) {
+            if (-not (Remove-PathQuietly -Path $path -Description "OneDrive: $path")) {
+                Write-Log "Could not fully remove OneDrive setup at: $path" "WARN"
+            }
         }
     }
     
