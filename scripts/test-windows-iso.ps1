@@ -19,6 +19,8 @@ param(
 
     [switch]$SkipBoot,
 
+    [switch]$RequireAnswerFile,
+
     [string]$ReportDirectory = (Join-Path $PWD 'validation-results')
 )
 
@@ -442,6 +444,9 @@ try {
         Write-Report 'Root autounattend.xml is well-formed XML.'
     }
     else {
+        if ($RequireAnswerFile) {
+            throw 'Required root autounattend.xml is missing from the repository-built ISO.'
+        }
         Write-Report 'Root autounattend.xml is absent (allowed for external Windows media).'
     }
 }

@@ -588,6 +588,7 @@ jobs:
           ./scripts/test-windows-iso.ps1 `
             -ISOPath $isoFiles[0].FullName `
             -BootTimeoutMinutes 20 `
+            -RequireAnswerFile `
             -ReportDirectory 'validation-results'
 
       - name: Add ISO test summary
@@ -670,6 +671,7 @@ jobs:
           ./scripts/test-windows-iso.ps1 `
             -ISOPath $isoFiles[0].FullName `
             -SkipBoot `
+            -RequireAnswerFile `
             -ReportDirectory 'install-results/iso-validation'
 
       - name: Install Windows and audit first boot
