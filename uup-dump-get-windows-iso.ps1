@@ -479,6 +479,8 @@ function Get-WindowsIso($name, $destinationDirectory) {
     UpdtBootFiles = '1'
     SkipISO       = '1'
   }
+  if ($esd) { $requiredConvertSettings['wim2esd'] = '1' }
+  if ($netfx3) { $requiredConvertSettings['NetFx3'] = '1' }
   foreach ($setting in $requiredConvertSettings.GetEnumerator()) {
     $pattern = '^{0}\s*=\s*{1}\s*$' -f [regex]::Escape($setting.Key), [regex]::Escape($setting.Value)
     if (-not (Select-String -LiteralPath "$buildDirectory/ConvertConfig.ini" -Pattern $pattern -Quiet)) {
