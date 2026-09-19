@@ -166,11 +166,11 @@ function New-BuildAnswerFile([string]$OutputPath) {
 
 $TARGETS = @{
   "win11-26h2"              = @{ baseBuild="26300"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP","ReleasePreview") }
-  "win11-26h2-experimental" = @{ baseBuild="26340"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wif","Dev"); displayVersion="26H2 EXPERIMENTAL" }
+  "win11-26h2-experimental" = @{ baseBuild="26340"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wif","Dev"); targetRelease="26200"; displayVersion="26H2 EXPERIMENTAL" }
   "win11-26h1"              = @{ baseBuild="28000"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP","ReleasePreview") }
   "win11-25h2"              = @{ baseBuild="26200"; edition=(Get-EditionName $edition); allowedRings=@("Retail","RP","ReleasePreview") }
-  "win11-25h2-beta"         = @{ baseBuild="26220"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wis","Beta"); displayVersion="25H2 BETA" }
-  "win11-future-platforms"  = @{ edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wif","Dev","Canary"); displayVersion="FUTURE PLATFORMS" }
+  "win11-25h2-beta"         = @{ baseBuild="26220"; edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wis","Beta"); targetRelease="26200"; displayVersion="25H2 BETA" }
+  "win11-future-platforms"  = @{ edition=(Get-EditionName $edition); preview=$true; allowedRings=@("Wif","Dev","Canary"); targetRelease="-1"; displayVersion="FUTURE PLATFORMS" }
 }
 
 if (-not $TARGETS.ContainsKey($windowsTargetName)) {
@@ -304,6 +304,19 @@ function Get-UupDumpIso($name, $target) {
       langs = $langResult.response.langFancyNames
       info  = $langResult.response.updateInfo
     } -Force
+
+    if ($target.ContainsKey('targetRelease')) {
+      # Legacy known-build entries can predate targetRelease metadata and still rely on build/ring filtering.
+      $targetReleaseProperty = $candidate.Value.info.PSObject.Properties['targetRelease']
+      if ($null -ne $targetReleaseProperty) {
+        $expectedTargetRelease = "$($target.targetRelease)"
+        $actualTargetRelease = "$($targetReleaseProperty.Value)"
+        if ($actualTargetRelease -ne $expectedTargetRelease) {
+          Write-CleanLine "Skipping candidate ${id}: expected targetRelease=$expectedTargetRelease, got targetRelease=$actualTargetRelease."
+          continue
+        }
+      }
+    }
 
     $langs = @(Get-ApiItemNames $candidate.Value.langs)
     if ($langs -notcontains $lang) {

@@ -35,7 +35,7 @@ The workflow chooses the runner from the architecture:
 2. Map user-facing inputs to script values:
    - Language labels become UUP language codes such as `en-us` and `ru-ru`.
    - Version labels become `uup-dump-get-windows-iso.ps1` target names such as `win11-25h2`.
-   - Public release and Insider names map to current UUP dump categories: 25H2, 26H2, and 26H1 accept Retail or Release Preview metadata; 25H2 Beta uses Beta/WIS; 26H2 Experimental uses Dev/WIF; and Future Platforms accepts Dev/WIF or Canary metadata.
+   - Public release and Insider names map to current UUP dump categories: 25H2, 26H2, and 26H1 accept Retail or Release Preview metadata; 25H2 Beta uses Beta/WIS with `targetRelease=26200`; 26H2 Experimental uses Dev/WIF with `targetRelease=26200`; and Future Platforms accepts Dev/WIF or Canary metadata with `targetRelease=-1`.
    - UUP ESD compression is enabled only when `esd=true` and `tiny11=false`, because Tiny11 recompresses later when requested.
 3. Free disk space on the runner.
 4. Prepare Windows media through `uup-dump-get-windows-iso.ps1`. It prepares `autounattend.xml` for the selected architecture and edition, asks the downloaded converter to retain its completed media folder with `SkipISO=1`, and adds the answer file. Without Tiny11 it creates the final ISO with the converter's bundled `cdimage.exe`; with Tiny11 it exports the media directory without creating an intermediate ISO.
@@ -55,7 +55,7 @@ This separately triggered workflow accepts a direct HTTPS ISO URL, an optional S
 ## Important behavior
 
 - Without Tiny11, the UUP stage writes `ISO_NAME` and `ISO_PATH` into `GITHUB_ENV`. With Tiny11, it writes `UUP_ISO_NAME` and `UUP_MEDIA_PATH`; the finalization step publishes the final `ISO_NAME` and `ISO_PATH`.
-- UUP search skips standalone `.NET Framework` update entries before checking language, edition, and ring.
+- UUP search skips standalone `.NET Framework` update entries before checking language, edition, ring, and the target's configured `targetRelease`. Older UUP dump entries that predate this metadata field remain selectable through the existing build and ring filters.
 - Tiny11 assumes the UUP-generated media has a single image index and always processes image index 1.
 - The Tiny11 output is staged through a temporary path before becoming the final ISO; no intermediate UUP ISO is created.
 - Every workflow-built ISO contains a root `autounattend.xml`. Its temporary copy is adjusted for x64/ARM64 and Pro/Home, placed in the converter's completed media folder before ISO creation, and carried forward by Tiny11 when enabled.
