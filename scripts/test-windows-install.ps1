@@ -51,6 +51,33 @@ function Write-Report {
     Add-Content -LiteralPath $reportPath -Value $line
 }
 
+function Get-CompletedProcessOutput {
+    param(
+        $StandardOutputTask,
+        $StandardErrorTask
+    )
+
+    $outputParts = [System.Collections.Generic.List[string]]::new()
+    foreach ($stream in @(
+        [pscustomobject]@{ Name = 'stdout'; Task = $StandardOutputTask },
+        [pscustomobject]@{ Name = 'stderr'; Task = $StandardErrorTask }
+    )) {
+        if ($stream.Task -and $stream.Task.IsCompleted) {
+            try {
+                $text = $stream.Task.GetAwaiter().GetResult()
+            }
+            catch {
+                $text = $_.Exception.Message
+            }
+            if (-not [string]::IsNullOrWhiteSpace($text)) {
+                $outputParts.Add("$($stream.Name):`n$($text.Trim())")
+            }
+        }
+    }
+
+    return ($outputParts -join "`n")
+}
+
 function Invoke-NativeChecked {
     param(
         [Parameter(Mandatory)]
@@ -489,11 +516,14 @@ function Set-CiAnswerFile {
     [void][xml](Get-Content -LiteralPath $OutputPath -Raw)
 }
 
-foreach ($command in @('sudo', 'mount', 'umount', 'wiminfo', 'qemu-img', 'qemu-system-x86_64', 'mkfs.vfat', 'id')) {
+foreach ($command in @('sudo', 'mount', 'umount', 'wiminfo', 'qemu-img', 'qemu-system-x86_64', 'mkfs.vfat', 'swtpm', 'id')) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
         throw "Required command is unavailable: $command"
     }
 }
+$killCommand = Get-Command 'kill' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $killCommand) { throw 'Required command is unavailable: kill' }
+$killExecutable = $killCommand.Source
 
 $availableAccelerators = & qemu-system-x86_64 -accel help 2>&1
 if (
@@ -505,6 +535,15 @@ if (
 }
 & sudo chmod a+rw -- /dev/kvm
 if ($LASTEXITCODE -ne 0) { throw 'Could not grant the runner access to /dev/kvm.' }
+
+$secureBootCodePath = '/usr/share/OVMF/OVMF_CODE_4M.ms.fd'
+$secureBootVarsTemplatePath = '/usr/share/OVMF/OVMF_VARS_4M.ms.fd'
+if (
+    -not (Test-Path -LiteralPath $secureBootCodePath -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $secureBootVarsTemplatePath -PathType Leaf)
+) {
+    throw "Secure Boot OVMF firmware with enrolled Microsoft keys was not found. Required CODE=$secureBootCodePath; VARS=$secureBootVarsTemplatePath."
+}
 
 $workBase = Select-WorkDirectory -RequestedPath $WorkDirectory
 $freeBytes = Get-FreeSpaceBytes $workBase
@@ -519,11 +558,18 @@ $ciMediaImage = Join-Path $workRoot 'ci-media.img'
 $mountDirectory = Join-Path $workRoot 'iso-mount'
 $diskPath = Join-Path $workRoot 'windows.qcow2'
 $varsPath = Join-Path $workRoot 'OVMF_VARS.fd'
-New-Item -ItemType Directory -Path $ciMediaDirectory, $mountDirectory -Force | Out-Null
+$tpmStateDirectory = Join-Path $workRoot 'tpm-state'
+$tpmSocketPath = Join-Path $workRoot 'swtpm.sock'
+$swtpmLogPath = Join-Path $ReportDirectory 'swtpm.log'
+New-Item -ItemType Directory -Path $ciMediaDirectory, $mountDirectory, $tpmStateDirectory -Force | Out-Null
 
 $mounted = $false
 $ciMediaMounted = $false
 $process = $null
+$swtpmProcess = $null
+$swtpmStarted = $false
+$swtpmStdoutTask = $null
+$swtpmStderrTask = $null
 try {
     Invoke-NativeChecked -FilePath 'sudo' -Arguments @('mount', '-o', 'loop,ro', '--', $resolvedISO, $mountDirectory) -Action 'Mount ISO read-only' | Out-Null
     $mounted = $true
@@ -588,27 +634,83 @@ try {
 
     Invoke-NativeChecked -FilePath 'qemu-img' -Arguments @('create', '-f', 'qcow2', '-o', 'preallocation=off', $diskPath, "${VirtualDiskSizeGB}G") -Action 'Create sparse Windows test disk' | Out-Null
 
-    $firmwareCandidates = @(
-        [pscustomobject]@{ Code = '/usr/share/OVMF/OVMF_CODE_4M.fd'; Vars = '/usr/share/OVMF/OVMF_VARS_4M.fd' }
-        [pscustomobject]@{ Code = '/usr/share/OVMF/OVMF_CODE.fd'; Vars = '/usr/share/OVMF/OVMF_VARS.fd' }
-    )
-    $firmware = $firmwareCandidates | Where-Object {
-        (Test-Path -LiteralPath $_.Code) -and (Test-Path -LiteralPath $_.Vars)
-    } | Select-Object -First 1
-    if (-not $firmware) { throw 'OVMF UEFI firmware was not found.' }
-    Copy-Item -LiteralPath $firmware.Vars -Destination $varsPath
+    Copy-Item -LiteralPath $secureBootVarsTemplatePath -Destination $varsPath
 
     $serialLog = Join-Path $ReportDirectory 'install-qemu-serial.log'
     $qemuLog = Join-Path $ReportDirectory 'install-qemu.log'
     $timeoutScreenshot = Join-Path $ReportDirectory 'install-timeout.png'
     $successScreenshot = Join-Path $ReportDirectory 'install-success.png'
+
+    Write-Report 'Windows 11 VM security: Secure Boot OVMF enabled; Microsoft keys enrolled; TPM 2.0 provided by swtpm.'
+    Write-Report "Secure Boot OVMF CODE: $secureBootCodePath"
+    Write-Report "Secure Boot OVMF VARS template: $secureBootVarsTemplatePath"
+    Write-Report "TPM control socket: $tpmSocketPath"
+
+    $swtpmStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $swtpmStartInfo.FileName = (Get-Command 'swtpm').Source
+    $swtpmStartInfo.UseShellExecute = $false
+    $swtpmStartInfo.RedirectStandardOutput = $true
+    $swtpmStartInfo.RedirectStandardError = $true
+    foreach ($argument in @(
+        'socket',
+        '--tpm2',
+        '--tpmstate', "dir=$tpmStateDirectory",
+        '--ctrl', "type=unixio,path=$tpmSocketPath",
+        '--terminate',
+        '--log', "file=$swtpmLogPath,level=1,truncate"
+    )) {
+        [void]$swtpmStartInfo.ArgumentList.Add($argument)
+    }
+
+    $swtpmProcess = [System.Diagnostics.Process]::new()
+    $swtpmProcess.StartInfo = $swtpmStartInfo
+    [void]$swtpmProcess.Start()
+    $swtpmStarted = $true
+    $swtpmStdoutTask = $swtpmProcess.StandardOutput.ReadToEndAsync()
+    $swtpmStderrTask = $swtpmProcess.StandardError.ReadToEndAsync()
+
+    $swtpmReady = $false
+    $swtpmReadyDeadline = [datetime]::UtcNow.AddSeconds(10)
+    while ([datetime]::UtcNow -lt $swtpmReadyDeadline) {
+        if ($swtpmProcess.HasExited) {
+            $swtpmProcess.WaitForExit()
+            $processOutput = Get-CompletedProcessOutput -StandardOutputTask $swtpmStdoutTask -StandardErrorTask $swtpmStderrTask
+            $logOutput = if (Test-Path -LiteralPath $swtpmLogPath -PathType Leaf) {
+                (Get-Content -LiteralPath $swtpmLogPath -Tail 80) -join "`n"
+            }
+            else {
+                '<no swtpm log was created>'
+            }
+            throw "swtpm exited before its TPM 2.0 control socket became ready. $processOutput`n$logOutput"
+        }
+        if (Test-Path -LiteralPath $tpmSocketPath) {
+            $swtpmReady = $true
+            break
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $swtpmReady) {
+        $logOutput = if (Test-Path -LiteralPath $swtpmLogPath -PathType Leaf) {
+            (Get-Content -LiteralPath $swtpmLogPath -Tail 80) -join "`n"
+        }
+        else {
+            '<no swtpm log was created>'
+        }
+        throw "swtpm did not create its TPM 2.0 control socket within 10 seconds: $tpmSocketPath`n$logOutput"
+    }
+    Write-Report 'swtpm TPM 2.0 control socket is ready.'
+
     $arguments = @(
-        '-machine', 'q35,accel=kvm',
+        '-machine', 'q35,accel=kvm,smm=on',
+        '-global', 'driver=cfi.pflash01,property=secure,value=on',
         '-cpu', 'host',
         '-smp', '2',
         '-m', '6144',
-        '-drive', "if=pflash,format=raw,readonly=on,file=$($firmware.Code)",
-        '-drive', "if=pflash,format=raw,file=$varsPath",
+        '-drive', "if=pflash,format=raw,unit=0,readonly=on,file=$secureBootCodePath",
+        '-drive', "if=pflash,format=raw,unit=1,file=$varsPath",
+        '-chardev', "socket,id=chrtpm,path=$tpmSocketPath",
+        '-tpmdev', 'emulator,id=tpm0,chardev=chrtpm',
+        '-device', 'tpm-tis,tpmdev=tpm0',
         '-drive', "file=$diskPath,media=disk,format=qcow2,discard=unmap,detect-zeroes=unmap",
         '-drive', "file=$resolvedISO,media=cdrom,readonly=on,format=raw",
         '-drive', "file=$ciMediaImage,if=none,id=cimedia,format=raw,cache=writethrough",
@@ -799,6 +901,8 @@ try {
         "| Locale | $locale |",
         '| Architecture | x64 |',
         '| Acceleration | KVM |',
+        '| Firmware | UEFI Secure Boot (Microsoft-enrolled OVMF keys) |',
+        '| TPM | swtpm TPM 2.0 |',
         '| Result channel | COM1 |',
         "| Checks | $($guestResult.totalChecks) total; $($guestResult.failedChecks) failed |",
         "| Duration | $([math]::Round(((Get-Date) - $startedAt).TotalMinutes, 2)) minutes |",
@@ -830,6 +934,32 @@ finally {
             if (-not $process.WaitForExit(5000)) { $process.Kill($true) }
         }
         catch { }
+    }
+    if ($swtpmStarted) {
+        try {
+            if (-not $swtpmProcess.HasExited) {
+                try { & $killExecutable '-TERM' '--' ([string]$swtpmProcess.Id) 2>&1 | Out-Null } catch { }
+                if (-not $swtpmProcess.WaitForExit(5000)) {
+                    try { $swtpmProcess.Kill($true) } catch { }
+                    try {
+                        if (-not $swtpmProcess.WaitForExit(5000)) {
+                            Write-Warning "swtpm process $($swtpmProcess.Id) did not exit during cleanup."
+                        }
+                    }
+                    catch { }
+                }
+            }
+            if ($swtpmProcess.HasExited) {
+                try { $swtpmProcess.WaitForExit() } catch { }
+                $swtpmOutput = Get-CompletedProcessOutput -StandardOutputTask $swtpmStdoutTask -StandardErrorTask $swtpmStderrTask
+                if (-not [string]::IsNullOrWhiteSpace($swtpmOutput)) {
+                    Add-Content -LiteralPath $swtpmLogPath -Value @('', 'swtpm process output:', $swtpmOutput) -ErrorAction SilentlyContinue
+                }
+            }
+        }
+        finally {
+            try { $swtpmProcess.Dispose() } catch { }
+        }
     }
     if (Test-Path -LiteralPath $workRoot -PathType Container) {
         $resolvedWorkRoot = (Resolve-Path -LiteralPath $workRoot).Path

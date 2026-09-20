@@ -133,6 +133,39 @@ catch {
     Add-Check -Name 'Installed Windows metadata' -Passed $false -Expected 'Readable' -Actual $_.Exception.Message
 }
 
+try {
+    $secureBootEnabled = Confirm-SecureBootUEFI -ErrorAction Stop
+    Add-Check -Name 'Secure Boot is enabled' `
+        -Passed ($secureBootEnabled -eq $true) `
+        -Expected 'True' `
+        -Actual $(if ($null -eq $secureBootEnabled) { '<null>' } else { [string]$secureBootEnabled })
+}
+catch {
+    Add-Check -Name 'Secure Boot is enabled' -Passed $false -Expected 'True' -Actual $_.Exception.Message
+}
+
+try {
+    $tpm = Get-Tpm -ErrorAction Stop
+    $tpmDevice = Get-CimInstance -Namespace 'root\CIMV2\Security\MicrosoftTpm' -ClassName Win32_Tpm -ErrorAction Stop |
+        Select-Object -First 1
+    if (-not $tpmDevice) { throw 'Win32_Tpm did not return a TPM device.' }
+
+    $tpmPresent = [bool]$tpm.TpmPresent
+    $tpmReady = [bool]$tpm.TpmReady
+    $tpmSpecVersion = [string]$tpmDevice.SpecVersion
+    $tpm2 = $tpmSpecVersion -match '^\s*2\.0(?:\s*,|\s*$)'
+    Add-Check -Name 'TPM 2.0 is present and ready' `
+        -Passed ($tpmPresent -and $tpmReady -and $tpm2) `
+        -Expected 'Present=True; Ready=True; SpecVersion=2.0' `
+        -Actual "Present=$tpmPresent; Ready=$tpmReady; SpecVersion=$tpmSpecVersion"
+}
+catch {
+    Add-Check -Name 'TPM 2.0 is present and ready' `
+        -Passed $false `
+        -Expected 'Present=True; Ready=True; SpecVersion=2.0' `
+        -Actual $_.Exception.Message
+}
+
 if ($auditTiny11) {
     foreach ($logName in @(
         'Specialize.log',
