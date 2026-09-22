@@ -210,19 +210,23 @@ jobs:
           echo "uup_esd=$uupEsd"   >> $env:GITHUB_OUTPUT
 
       - name: Free disk space (safe)
+        shell: cmd
+        run: |
+          echo Free space before:
+          fsutil volume diskfree C:
+          if exist "C:\Program Files\Microsoft Visual Studio\" rmdir /s /q "C:\Program Files\Microsoft Visual Studio"
+          if exist "C:\Program Files (x86)\Microsoft Visual Studio\" rmdir /s /q "C:\Program Files (x86)\Microsoft Visual Studio"
+          if exist "C:\Program Files\Android\" rmdir /s /q "C:\Program Files\Android"
+          echo Free space after removing large SDKs:
+          fsutil volume diskfree C:
+
+      - name: Clear temporary runner files
         shell: pwsh
         run: |
-         Write-Host "Free space before:"
-         Get-PSDrive C
-
-         Remove-Item -Recurse -Force "C:\Program Files\Microsoft Visual Studio" -ErrorAction SilentlyContinue
-         Remove-Item -Recurse -Force "C:\Program Files (x86)\Microsoft Visual Studio" -ErrorAction SilentlyContinue
-         Remove-Item -Recurse -Force "C:\Program Files\Android" -ErrorAction SilentlyContinue
-         Remove-Item -Recurse -Force "$env:TEMP\*" -ErrorAction SilentlyContinue
-         Remove-Item -Recurse -Force "C:\Windows\Temp\*" -ErrorAction SilentlyContinue
-
-         Write-Host "Free space after:"
-         Get-PSDrive C
+          Remove-Item -Recurse -Force "$env:TEMP\*" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "C:\Windows\Temp\*" -ErrorAction SilentlyContinue
+          Write-Host "Free space after:"
+          Get-PSDrive C
 
       - name: Install ADK Deployment Tools (oscdimg)
         if: ${{ inputs.tiny11 }}
@@ -235,7 +239,7 @@ jobs:
           }
           Write-Output "Downloading Windows ADK setup..."
           $adkSetup = Join-Path $env:RUNNER_TEMP "adksetup.exe"
-          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2337875" -OutFile $adkSetup -UseBasicParsing
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2289980" -OutFile $adkSetup -UseBasicParsing
           Write-Output "Installing ADK Deployment Tools (oscdimg)..."
           Start-Process -Wait -FilePath $adkSetup -ArgumentList '/quiet', '/norestart', '/features', 'OptionId.DeploymentTools'
           if (Test-Path "$adkPath\$env:PROCESSOR_ARCHITECTURE\Oscdimg\oscdimg.exe") {
